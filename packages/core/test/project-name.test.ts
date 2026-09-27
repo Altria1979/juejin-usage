@@ -62,7 +62,8 @@ test(
       execFileSync('git', ['-c', 'init.defaultBranch=main', 'init', '--template='], {
         cwd: repo,
         encoding: 'utf-8',
-        timeout: 5_000,
+        // Fixture creation has no user-facing latency budget; allow busy Windows CI.
+        timeout: 30_000,
         windowsHide: true,
         env: {
           ...process.env,

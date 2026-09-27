@@ -136,7 +136,8 @@ test(
     execFileSync('git', ['-c', 'init.defaultBranch=main', 'init', '--template='], {
       cwd: repo,
       encoding: 'utf-8',
-      timeout: 5_000,
+      // Windows CI can delay the first Git startup while test files run in parallel.
+      timeout: 30_000,
       windowsHide: true,
       env: {
         ...process.env,
