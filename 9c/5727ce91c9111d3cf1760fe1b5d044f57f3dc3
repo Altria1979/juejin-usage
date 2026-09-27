@@ -1,0 +1,35 @@
+packages/core/src/aggregate-cache.ts
+  s_b8fe478b6da5a2::t_5809581f7be6bd 2-4,42-43,45,50,59,91,93,124-130,141,148,153,161,164,169,187,192-195,209,221,233,241-244,256,261-264,279,288,322-323,439-441,445-450,478-480,515-517,541,550,553-560,565,585-587,599,603-608,623,627-632,637-640,648,653-656,677,681-686,691-694,703,708-711,730,738,747-755,786-788
+packages/core/src/aggregate.ts
+  s_b8fe478b6da5a2::t_35671ed0c13802 3-6,22-26,45,49-54,74,78-83,88-91,100,105-108,128,136,145-154,205-206,218,253,263,267-272,275-282,290-293,299-311,314-317,327,332-335,343,348-351,358-402,437,459,464-467,514,522,533,553,558-561,571,579-582,592,597-600,616,627,636
+packages/core/src/local-metrics.ts
+  s_b8fe478b6da5a2::t_976dd582568128 3-61,172,174,187,195,217-221
+packages/core/src/server/state.ts
+  s_b8fe478b6da5a2::t_09ccbe31c9d454 57-58,319,326,334,402-403
+packages/core/src/types.ts
+  s_b8fe478b6da5a2::t_b846fac036e064 1,3,8,14-15,351-354,358-368,372-375,379-382,386-389,436-439,449-452,476-479,569,578,589,592,604-607,614,631,634,653,663,673,684,774
+packages/core/test/aggregate-cache.test.ts
+  s_b8fe478b6da5a2::t_c002e8bf8998f5 73
+packages/core/test/aggregate.test.ts
+  s_b8fe478b6da5a2::t_aa18c1f2255182 256,258
+packages/core/test/sync-upload-status.test.ts
+  s_b8fe478b6da5a2::t_53d3467d617230 1-121
+packages/core/test/usage-quality.test.ts
+  s_b8fe478b6da5a2::t_c7006cc2eac85c 1-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9c5727ce91c9111d3cf1760fe1b5d044f57f3dc3",
+  "prompts": {},
+  "sessions": {
+    "s_b8fe478b6da5a2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e2f0-93b7-7bb2-8ae0-fc421d4c3009",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
