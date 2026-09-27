@@ -1,0 +1,23 @@
+packages/dashboard/src/lib/leaderboard-refresh.ts
+  s_b8fe478b6da5a2::t_ded140e2d0ec31 1-57
+packages/dashboard/src/lib/leaderboard-refresh.test.ts
+  s_b8fe478b6da5a2::t_ded140e2d0ec31 1-142
+packages/dashboard/src/hooks/useLeaderboardData.ts
+  s_b8fe478b6da5a2::t_ded140e2d0ec31 12-15,24,37-39,56,60,68,100-105,108-109,116-117,120,122,124,126-131,134-136,139-141,143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ebc9a86a1e61a761b0ad1b25a1c3de828d341e76",
+  "prompts": {},
+  "sessions": {
+    "s_b8fe478b6da5a2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e2f0-93b7-7bb2-8ae0-fc421d4c3009",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
