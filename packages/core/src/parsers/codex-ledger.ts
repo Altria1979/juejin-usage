@@ -15,8 +15,10 @@
 import { readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
-import type { TokenTotals } from '../types.js';
+import type { QueueBucket, TokenTotals } from '../types.js';
 import { codexHomeCandidates } from '../paths.js';
+import { normalizeProjectName } from '../project-label.js';
+import { reconcileTrackedCodexThread, type CodexLedgerState, type CodexPreciseInterval } from './codex-ledger-state.js';
 import { resolveProjectName } from '../project-name.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
 import { UNKNOWN_MODEL } from '../queue/align-unknown.js';
@@ -69,6 +71,9 @@ export interface CodexRolloutScan {
   /** Parsed deltas this round, including `statsSince` skips and fork replay. */
   observed: number;
   sessionId: string | null;
+  preciseIntervals?: CodexPreciseInterval[];
+  observedDeltas?: Record<string, number>;
+  ambiguousCounter?: boolean;
 }
 
 /** Ledger databases under every Codex home (may not exist). */
@@ -326,6 +331,7 @@ export function reconcileCodexLedgerThread(
 }
 
 export interface ApplyCodexLedgerOptions {
+  provenance?: CodexLedgerState;
   dbMtimes: Record<string, number>;
   ledgerTotals: Record<string, { tokens: number }>;
   /** Rollout basenames present in the file cursor before this round. */
@@ -364,7 +370,20 @@ export function applyCodexLedger(opts: ApplyCodexLedgerOptions): ApplyCodexLedge
     for (const thread of loaded.threads) {
       const scan = scanForThread(thread, opts.scans);
       const rolloutName = thread.rolloutPath ? basename(thread.rolloutPath) : '';
-      if (
+      if (opts.provenance) {
+        const hourStart = thread.timestampMs > 0 ? toUtcHalfHourStart(new Date(thread.timestampMs).toISOString()) : null;
+        const gapBucket: QueueBucket | null = hourStart && Date.parse(hourStart) >= opts.sinceMs ? {
+          source: 'codex', collector: CODEX_LEDGER_COLLECTOR,
+          model: thread.model || UNKNOWN_MODEL,
+          project: normalizeProjectName(thread.cwd ? resolveProjectName(thread.cwd) : UNKNOWN_MODEL),
+          hour_start: hourStart, input_tokens: 0, output_tokens: 0, cached_input_tokens: 0,
+          cache_creation_input_tokens: 0, reasoning_output_tokens: 0, total_tokens: 0, conversation_count: 0,
+        } : null;
+        if (reconcileTrackedCodexThread(opts.provenance, thread.id, thread.tokensUsed,
+          scan.preciseIntervals ?? [], scan.lifetime, scan.observed,
+          rolloutName !== '' && opts.priorRolloutNames.has(rolloutName), gapBucket, scan.ambiguousCounter === true, scan.observedDeltas)) eventsParsed += 1;
+        opts.ledgerTotals[thread.id] = { tokens: opts.provenance.threads[thread.id]!.watermark };
+      } else if (
         reconcileCodexLedgerThread(thread, {
           ledgerTotals: opts.ledgerTotals,
           jsonlEmitted: scan.emitted,
@@ -381,7 +400,15 @@ export function applyCodexLedger(opts: ApplyCodexLedgerOptions): ApplyCodexLedge
     }
   }
 
-  if (loaded.skippedDbPaths.length > 0 || loaded.error) {
+  if (opts.provenance && !loaded.error && loaded.skippedDbPaths.length === 0) opts.provenance.seedLegacyThreads = false;
+  if (opts.provenance) {
+    for (const scan of opts.scans.values()) {
+      if (!scan.sessionId || reconciled.has(scan.sessionId)) continue;
+      reconcileTrackedCodexThread(opts.provenance, scan.sessionId, null, scan.preciseIntervals ?? [],
+        scan.lifetime, scan.observed, false, null, scan.ambiguousCounter === true, scan.observedDeltas);
+      opts.ledgerTotals[scan.sessionId] = { tokens: opts.provenance.threads[scan.sessionId]!.watermark };
+    }
+  } else if (loaded.skippedDbPaths.length > 0 || loaded.error) {
     for (const scan of opts.scans.values()) {
       if (!scan.sessionId || scan.emitted <= 0) continue;
       if (reconciled.has(scan.sessionId)) continue;

@@ -1,3 +1,4 @@
+import { ledgerSnapshots, type CodexLedgerState } from './codex-ledger-state.js';
 import { localEvidence, validUsageFields } from '../local-metrics.js';
 import { createReadStream, type Stats } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -12,7 +13,7 @@ import type {
 } from '../types.js';
 import { codexSessionsDirs } from '../paths.js';
 import { resolveProjectName } from '../project-name.js';
-import { toUtcHalfHourStart } from '../queue/keys.js';
+import { bucketKey, toUtcHalfHourStart } from '../queue/keys.js';
 import { createJsonlLineReader } from './jsonl-tail.js';
 import {
   modelFromRolloutEvent,
@@ -176,7 +177,10 @@ export interface ParseCodexResult {
 export async function parseCodexIncremental(
   cursors: CursorsFile,
   statsSince: string,
+  provenance?: CodexLedgerState,
 ): Promise<{ result: ParseCodexResult; cursors: CursorsFile }> {
+  const previousLedger = new Map(provenance && !provenance.publishBaselines
+    ? ledgerSnapshots(provenance).map(row => [bucketKey(row), JSON.stringify(row)]) : []);
   const files = await listCodexRolloutFiles();
   const sinceMs = new Date(statsSince).getTime();
 
@@ -184,6 +188,7 @@ export async function parseCodexIncremental(
     cursors.codex = { files: {}, sessionIndex: {}, seenHashes: [] };
   }
   const codexCursor = cursors.codex;
+  if (provenance) codexCursor.ledgerTotals = Object.fromEntries(Object.entries(provenance.threads).map(([id, row]) => [id, { tokens: row.watermark }]));
   if (!codexCursor.sessionIndex) codexCursor.sessionIndex = {};
   if (!codexCursor.files) codexCursor.files = {};
   const seenHashes = new Set(codexCursor.seenHashes ?? []);
@@ -242,6 +247,8 @@ export async function parseCodexIncremental(
         : [],
     );
 
+    let lastCumulative: number | undefined = startOffset > 0
+      ? Math.max(0, ...[...prevTotalMap.values()].map(value => Number(value.total_tokens) || 0)) : undefined;
     if (sameInode && !truncated && startOffset >= st.size) continue;
 
     const scan: CodexRolloutScan = {
@@ -249,6 +256,8 @@ export async function parseCodexIncremental(
       lifetime: null,
       observed: 0,
       sessionId: meta.sessionId,
+      preciseIntervals: [],
+      observedDeltas: {},
     };
     rolloutScans.set(basename(filePath), scan);
 
@@ -314,8 +323,12 @@ export async function parseCodexIncremental(
       const rawUsage = pickDelta(lastUsage, totalUsage, prevTotals);
       if (totalUsage) prevTotalMap.set(modelKey, { ...totalUsage });
       const cumulative = Number(totalUsage?.total_tokens);
-      if (Number.isFinite(cumulative) && cumulative > 0) {
-        scan.lifetime = scan.lifetime == null ? cumulative : Math.max(scan.lifetime, cumulative);
+      const priorCumulative = lastCumulative;
+      if (Number.isSafeInteger(cumulative) && cumulative >= 0) {
+        const reset = lastCumulative !== undefined && cumulative < lastCumulative;
+        if (reset) scan.ambiguousCounter = true;
+        lastCumulative = cumulative;
+        scan.lifetime = reset || scan.lifetime == null ? cumulative : Math.max(scan.lifetime, cumulative);
       }
 
       const isReplayedHistory = tokenCountSeen < replayTokenCountToSkip;
@@ -343,7 +356,10 @@ export async function parseCodexIncremental(
         // does not report it again, but do not emit it.
         if (isReplayedHistory && rawUsage) {
           const skipped = normalizeCodexUsage(rawUsage);
-          if (skipped) scan.observed += skipped.total_tokens;
+          if (skipped) {
+            scan.observed += skipped.total_tokens;
+            if (!Number.isSafeInteger(cumulative)) scan.observedDeltas![`${tokenCountSeen}:${tokenEvent.timestamp ?? ''}`] = skipped.total_tokens;
+          }
         }
         continue;
       }
@@ -351,6 +367,9 @@ export async function parseCodexIncremental(
       const delta = normalizeCodexUsage(rawUsage);
       if (!delta) continue;
       scan.observed += delta.total_tokens;
+      if (!Number.isSafeInteger(cumulative)) {
+        scan.observedDeltas![`${tokenCountSeen}:${tokenEvent.timestamp ?? ''}`] = delta.total_tokens;
+      }
 
       const ts = tokenEvent.timestamp;
       if (!ts) continue;
@@ -396,6 +415,13 @@ export async function parseCodexIncremental(
         hourStart,
         delta,
       );
+      // Only precisely positioned, actually emitted usage can replace a gap.
+      // A later unrelated delta without a cumulative position is not proof.
+      if (Number.isSafeInteger(cumulative) && cumulative >= delta.total_tokens &&
+          Number(rawUsage.total_tokens) === delta.total_tokens &&
+          (priorCumulative === undefined || cumulative - priorCumulative >= delta.total_tokens)) {
+        scan.preciseIntervals!.push({ from: cumulative - delta.total_tokens, to: cumulative });
+      }
       scan.emitted += delta.total_tokens;
       eventsParsed += 1;
     }
@@ -423,10 +449,11 @@ export async function parseCodexIncremental(
 
   // No ledger file: leave the cursor untouched so existing JSONL syncs stay
   // byte-identical aside from the buckets they already produced.
-  if (codexLedgerDbPaths().length > 0) {
+  if (provenance || codexLedgerDbPaths().length > 0) {
     if (!codexCursor.ledgerTotals) codexCursor.ledgerTotals = {};
     if (!codexCursor.dbMtimes) codexCursor.dbMtimes = {};
     const ledger = applyCodexLedger({
+      provenance,
       dbMtimes: codexCursor.dbMtimes,
       ledgerTotals: codexCursor.ledgerTotals,
       priorRolloutNames,
@@ -439,6 +466,10 @@ export async function parseCodexIncremental(
   }
 
   const buckets = bucketsFromState(bucketState, 'codex');
+  if (provenance) {
+    buckets.push(...ledgerSnapshots(provenance).filter(row => previousLedger.get(bucketKey(row)) !== JSON.stringify(row)));
+    provenance.publishBaselines = false;
+  }
   return {
     result: { buckets, eventsParsed, filesProcessed },
     cursors,

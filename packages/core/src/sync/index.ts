@@ -6,6 +6,7 @@ import { measureCpuPhase } from '../debug-log.js';
 import { isSyncSourcePresent } from './source-presence.js';
 import { parseClaudeIncremental } from '../parsers/claude.js';
 import { parseCommandCodeIncremental } from '../parsers/command-code.js';
+import { commitCodexLedgerTransaction, loadCodexLedgerState, withCodexLedgerLock, type CodexLedgerState } from '../parsers/codex-ledger-state.js';
 import { parseCodexIncremental } from '../parsers/codex.js';
 import { parseCursorIncremental } from '../parsers/cursor.js';
 import { parseQoderIncremental } from '../parsers/qoder.js';
@@ -108,6 +109,7 @@ function mergeBuckets(a: QueueBucket, b: QueueBucket): QueueBucket {
 
 function bucketChanged(a: QueueBucket, b: QueueBucket): boolean {
   return (
+    a.ledger_unverified_tokens !== b.ledger_unverified_tokens ||
     a.input_tokens !== b.input_tokens ||
     a.output_tokens !== b.output_tokens ||
     a.cached_input_tokens !== b.cached_input_tokens ||
@@ -176,14 +178,27 @@ async function syncSourceBuckets(
     };
     cursors: Awaited<ReturnType<typeof loadCursors>>;
   }>,
-  options?: { sharedCursors?: CursorsFile },
+  options?: { sharedCursors?: CursorsFile; codexLedgerState?: CodexLedgerState },
 ): Promise<SyncResult> {
   const collectSince = resolveLocalCollectSince(config);
   const shared = options?.sharedCursors;
   let cursors = shared ?? (await loadCursors(dataDir));
+  if (options?.codexLedgerState) cursors = structuredClone(cursors);
+  const provenanceBefore = options?.codexLedgerState ? JSON.stringify(options.codexLedgerState) : undefined;
+  const codexBefore = JSON.stringify(cursors.codex);
   const statefulBefore = statefulCursorSlots(cursors);
   const { result, cursors: nextCursors } = await parseFn(cursors, collectSince);
   cursors = nextCursors;
+  const commit = async (buckets: QueueBucket[]): Promise<void> => {
+    if (options?.codexLedgerState) {
+      if (buckets.length === 0 && provenanceBefore === JSON.stringify(options.codexLedgerState) && codexBefore === JSON.stringify(cursors.codex)) return;
+      await commitCodexLedgerTransaction(dataDir, buckets, cursors.codex!, options.codexLedgerState);
+      if (shared) shared.codex = cursors.codex;
+    } else {
+      await appendBuckets(dataDir, buckets);
+      if (buckets.length > 0 || !shared) await saveCursors(dataDir, cursors);
+    }
+  };
 
   if (result.skipped) {
     if (!shared) await saveCursors(dataDir, cursors);
@@ -200,7 +215,7 @@ async function syncSourceBuckets(
 
   // No new buckets → skip queue merge/IO entirely (source fingerprint unchanged).
   if (result.buckets.length === 0) {
-    if (!shared) await saveCursors(dataDir, cursors);
+    await commit([]);
     await setLastSyncAt(dataDir, config);
     return {
       source,
@@ -219,7 +234,7 @@ async function syncSourceBuckets(
   );
   const existing = await loadBucketsForRange(
     dataDir,
-    collectSince,
+    options?.codexLedgerState ? '1970-01-01T00:00:00.000Z' : collectSince,
     touchedMonths,
   );
   const existingMap = new Map(existing.map((r) => [bucketKey(r), r]));
@@ -234,7 +249,8 @@ async function syncSourceBuckets(
   for (const delta of result.buckets) {
     const key = bucketKey(delta);
     const prev = working.get(key);
-    working.set(key, snapshot ? delta : prev ? mergeBuckets(prev, delta) : delta);
+    const fullLedgerSnapshot = options?.codexLedgerState && delta.collector === 'codex-ledger';
+    working.set(key, snapshot || fullLedgerSnapshot ? delta : prev ? mergeBuckets(prev, delta) : delta);
   }
   const touched = new Set(result.buckets.map((bucket) => unknownAlignGroupKey(bucket)));
   const everyCodeUnknownGroups = new Set<string>();
@@ -266,14 +282,7 @@ async function syncSourceBuckets(
     }
   }
 
-  if (toAppend.length > 0) {
-    await appendBuckets(dataDir, toAppend);
-    // Buckets are on disk now; persist dedup/offset state immediately even in
-    // shared-cursors mode so a crash cannot double-count the appended rows.
-    await saveCursors(dataDir, cursors);
-  } else if (!shared) {
-    await saveCursors(dataDir, cursors);
-  }
+  await commit(toAppend);
   await setLastSyncAt(dataDir, config);
 
   return {
@@ -296,7 +305,16 @@ export async function syncClaude(
 }
 
 export async function syncCodex(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
-  return syncSourceBuckets(dataDir, config, 'codex', parseCodexIncremental, { sharedCursors: opts?.sharedCursors });
+  return withCodexLedgerLock(dataDir, async () => {
+    const persisted = await loadCursors(dataDir);
+    if (opts?.sharedCursors) opts.sharedCursors.codex = persisted.codex;
+    const cursors = opts?.sharedCursors ?? persisted;
+    const provenance = await loadCodexLedgerState(dataDir,
+      () => loadBucketsForRange(dataDir, '1970-01-01T00:00:00.000Z'), cursors);
+    return syncSourceBuckets(dataDir, config, 'codex',
+      (cursor, since) => parseCodexIncremental(cursor, since, provenance),
+      { sharedCursors: opts?.sharedCursors, codexLedgerState: provenance });
+  });
 }
 
 export async function syncQoder(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {

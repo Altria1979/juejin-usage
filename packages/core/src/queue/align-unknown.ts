@@ -70,7 +70,7 @@ export function collectCodexDominantModels(
 ): { hourStart: string; model: string }[] {
   const byHour = new Map<string, Map<string, number>>();
   for (const row of buckets) {
-    if (row.source !== 'codex' || row.model === UNKNOWN_MODEL) continue;
+    if (row.source !== 'codex' || row.collector === 'codex-ledger' || row.model === UNKNOWN_MODEL) continue;
     let models = byHour.get(row.hour_start);
     if (!models) {
       models = new Map();
@@ -175,6 +175,8 @@ export function alignUnknownIntoDominant(
 
   const out: QueueBucket[] = [];
   for (const group of groups.values()) {
+    // Ledger provenance refers to the original key, even when its model is unknown.
+    if (group[0]?.collector === 'codex-ledger') { out.push(...group); continue; }
     const unknownRows = group.filter((row) => row.model === UNKNOWN_MODEL);
     const knownRows = group.filter((row) => row.model !== UNKNOWN_MODEL);
     const unknownHasUsage = unknownRows.some(

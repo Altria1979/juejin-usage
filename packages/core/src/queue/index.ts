@@ -1,8 +1,10 @@
 import { createReadStream, existsSync } from 'node:fs';
-import { readdir, readFile, writeFile, appendFile, mkdir, unlink } from 'node:fs/promises';
+import { readdir, readFile, writeFile, appendFile, mkdir, unlink, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
+import { codexLedgerReadStamp, commitCodexLedgerTransaction, ledgerSnapshots, loadCodexLedgerState, recoverCodexLedgerTransaction, withCodexLedgerLock } from '../parsers/codex-ledger-state.js';
+export { recoverCodexLedgerTransaction } from '../parsers/codex-ledger-state.js';
 import type { ManifestFile, QueueBucket } from '../types.js';
 import { bucketKey, monthFromHourStart } from './keys.js';
 import { manifestPath, queueDir } from '../paths.js';
@@ -58,19 +60,24 @@ export async function loadBucketsForRange(
   statsSince: string,
   months?: string[],
 ): Promise<QueueBucket[]> {
-  const monthList = months ?? (await listQueueMonths(dataDir));
   const since = new Date(statsSince).getTime();
-  const seen = new Map<string, QueueBucket>();
-  for (const month of monthList) {
-    await visitJsonlFile(
-      join(queueDir(dataDir), `${month}.jsonl`),
-      (row) => {
-        if (new Date(row.hour_start).getTime() < since) return;
-        seen.set(bucketKey(row), row);
-      },
-    );
+  for (;;) {
+    const before = await codexLedgerReadStamp(dataDir);
+    const monthList = months ?? (await listQueueMonths(dataDir));
+    const seen = new Map<string, QueueBucket>();
+    for (const month of monthList) {
+      await visitJsonlFile(
+        join(queueDir(dataDir), `${month}.jsonl`),
+        (row) => {
+          if (new Date(row.hour_start).getTime() < since) return;
+          seen.set(bucketKey(row), row);
+        },
+      );
+    }
+    // A commit may begin after the first recovery check and finish before this
+    // read ends. Its atomic provenance replacement detects that mixed snapshot.
+    if (before === await codexLedgerReadStamp(dataDir)) return Array.from(seen.values());
   }
-  return Array.from(seen.values());
 }
 
 export async function loadRecentBuckets(
@@ -81,31 +88,51 @@ export async function loadRecentBuckets(
   return loadBucketsForRange(dataDir, statsSince);
 }
 
-export async function clearQueueBuckets(dataDir: string): Promise<void> {
+export async function clearQueueBuckets(dataDir: string, preserved: QueueBucket[] = []): Promise<void> {
   const dir = queueDir(dataDir);
   if (!existsSync(dir)) return;
   const entries = await readdir(dir);
   for (const name of entries) {
     if (!name.endsWith('.jsonl')) continue;
-    await unlink(join(dir, name)).catch(() => undefined);
+    const keep = preserved.filter(row => `${monthFromHourStart(row.hour_start)}.jsonl` === name);
+    if (keep.length > 0) {
+      const temporary = join(dir, `${name}.reset.tmp`);
+      await writeFile(temporary, keep.map(row => JSON.stringify(row)).join('\n') + '\n', 'utf8');
+      await rename(temporary, join(dir, name));
+    } else {
+      await unlink(join(dir, name));
+    }
   }
   await rebuildManifest(dataDir);
 }
 
-export async function clearCursors(dataDir: string): Promise<void> {
+async function clearCursorsUnlocked(dataDir: string): Promise<void> {
   await writeFile(join(dataDir, 'cursors.json'), '{}\n', 'utf8');
   cursorsCache.set(dataDir, { value: {}, serialized: '{}' });
 }
 
+export async function clearCursors(dataDir: string): Promise<void> {
+  await withCodexLedgerLock(dataDir, () => clearCursorsUnlocked(dataDir));
+}
+
 /** Reset incremental cursors + local queue so the next sync can re-collect. */
 export async function resetLocalUsageCache(dataDir: string): Promise<void> {
-  await clearCursors(dataDir);
-  await clearQueueBuckets(dataDir);
+  await withCodexLedgerLock(dataDir, async () => {
+    const rows = await loadBucketsForRange(dataDir, '1970-01-01T00:00:00.000Z');
+    const provenance = await loadCodexLedgerState(dataDir, rows, await loadCursors(dataDir));
+    const preserved = ledgerSnapshots(provenance);
+    // Persist the baseline before deleting any recoverable detail cache. Each
+    // month replacement retains ledger rows, including across interrupted resets.
+    await commitCodexLedgerTransaction(dataDir, preserved, { files: {} }, provenance);
+    await clearCursorsUnlocked(dataDir);
+    await clearQueueBuckets(dataDir, preserved);
+  });
 }
 
 export async function appendBuckets(
   dataDir: string,
   buckets: QueueBucket[],
+  options?: { ensureLineBoundary?: boolean },
 ): Promise<void> {
   if (buckets.length === 0) return;
   const byMonth = new Map<string, QueueBucket[]>();
@@ -117,7 +144,7 @@ export async function appendBuckets(
   for (const [month, rows] of byMonth) {
     const file = join(queueDir(dataDir), `${month}.jsonl`);
     await mkdir(queueDir(dataDir), { recursive: true });
-    const lines = rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+    const lines = (options?.ensureLineBoundary ? '\n' : '') + rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
     await appendFile(file, lines, 'utf8');
   }
   await updateManifest(dataDir, Array.from(byMonth.keys()), byMonth);
@@ -218,6 +245,7 @@ export function resetCursorsCache(dataDir?: string): void {
 }
 
 export async function loadCursors(dataDir: string): Promise<import('../types.js').CursorsFile> {
+  await recoverCodexLedgerTransaction(dataDir);
   const hit = cursorsCache.get(dataDir);
   if (hit) return hit.value;
 
