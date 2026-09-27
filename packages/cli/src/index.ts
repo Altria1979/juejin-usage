@@ -35,6 +35,7 @@ import {
   kickBackfillDrain,
   stopBackfillDrain,
   drainBackfillUntilIdle,
+  getUploadStatus,
   resolvePricingRefreshConfig,
   DEFAULT_PRICING_FIRST_FETCH_TIMEOUT_MS,
   startPricingRefresh,
@@ -467,11 +468,18 @@ async function cmdUpload(force = false, reconcile = false): Promise<void> {
     reconcile,
     skipDrain: true,
   });
-  await drainBackfillUntilIdle(dir, config);
+  await drainBackfillUntilIdle(dir, config, { force });
 
   if (result === null && !force && !config.juejin.enabled) {
     console.log('云端同步未开启（config.juejin.enabled = false）');
     console.log('使用 --force 可强制上报');
+    return;
+  }
+
+  const upload = await getUploadStatus(dir, force
+    ? { ...config, juejin: { ...config.juejin, enabled: true } } : config);
+  if (upload.state === 'pending' || upload.state === 'failed') {
+    console.log(`本地数据已保留，云端${upload.state === 'failed' ? '上传失败' : '待补报'}: ${upload.pendingBuckets} 组。${upload.message ?? ''}`);
     return;
   }
 
@@ -481,7 +489,7 @@ async function cmdUpload(force = false, reconcile = false): Promise<void> {
   }
 
   console.log(
-    `上报完成: ${result.uploaded} 条即时事件, ${result.requestCount} 个请求, accepted=${result.accepted}, duplicate=${result.duplicate}` +
+    `云端已接收（排行榜可能稍后刷新）: ${result.uploaded} 条即时事件, ${result.requestCount} 个请求, accepted=${result.accepted}, duplicate=${result.duplicate}` +
       (result.backfillEnqueued
         ? `, 补报入队 ${result.backfillEnqueued} 条`
         : ''),

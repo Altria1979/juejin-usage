@@ -1,3 +1,4 @@
+import { UploadStatusNotice } from '@/components/UploadStatusNotice';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Button,
@@ -458,6 +459,7 @@ function AppSettingsPanel() {
                 : '从未'
             }
           />
+          <UploadStatusNotice />
         </div>
       </Surface>
     </div>

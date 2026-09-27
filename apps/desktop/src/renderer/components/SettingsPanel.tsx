@@ -1,3 +1,4 @@
+import { UploadStatusNotice } from '@/components/UploadStatusNotice';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -1411,6 +1412,7 @@ function AppSettingsPanel() {
                   : '从未'
               }
             />
+          <UploadStatusNotice />
           </Card.Content>
         </Card>
       )}

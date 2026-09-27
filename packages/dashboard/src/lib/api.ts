@@ -1,3 +1,4 @@
+import type { UploadStatus } from '@juejin-opensource/jusage-core';
 import { LEADERBOARD_DEFAULT_LIMIT } from '@juejin-opensource/jusage-core/leaderboard';
 import type { PricingData } from '@juejin-opensource/jusage-core';
 import type {
@@ -6,7 +7,7 @@ import type {
   LeaderboardRange,
   LeaderboardResponse,
 } from '@juejin-opensource/jusage-core';
-import type { LocalUsageMetrics } from '@juejin-opensource/jusage-core/local-metrics';
+import type { CostBreakdown, LocalUsageMetrics } from '@juejin-opensource/jusage-core/local-metrics';
 import { appendDeviceIdsQuery } from './device-filter.ts';
 
 export type {
@@ -31,6 +32,8 @@ export interface LeaderboardFilters {
 }
 
 export interface ModelUsageRow {
+  localMetrics?: LocalUsageMetrics;
+  costBreakdown?: CostBreakdown;
   model: string;
   tokens: number;
   costUsd: number;
@@ -76,6 +79,8 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
 }
 
 export interface SourceUsageRow {
+  localMetrics?: LocalUsageMetrics;
+  costBreakdown?: CostBreakdown;
   source: string;
   tokens: number;
   costUsd: number;
@@ -84,7 +89,9 @@ export interface SourceUsageRow {
 }
 
 export interface UsageSummary {
+  costBreakdown?: CostBreakdown;
   localMetrics?: LocalUsageMetrics;
+  todayCostBreakdown?: CostBreakdown;
   todayLocalMetrics?: LocalUsageMetrics;
   totalTokens: number;
   totalCostUsd: number;
@@ -95,12 +102,18 @@ export interface UsageSummary {
 }
 
 export interface DailyProjectUsage {
+  costUsd?: number;
+  localMetrics?: LocalUsageMetrics;
+  modelBreakdown?: ProjectModelBreakdownRow[];
+  costBreakdown?: CostBreakdown;
   project: string;
   tokens: number;
   models: Record<string, number>;
 }
 
 export interface DailyUsageRow {
+  modelBreakdown?: ModelBreakdownRow[];
+  costBreakdown?: CostBreakdown;
   date: string;
   tokens: number;
   costUsd: number;
@@ -114,6 +127,7 @@ export interface DailyUsageRow {
     source: string;
     tokens: number;
     costUsd: number;
+    costBreakdown?: CostBreakdown;
     localMetrics: LocalUsageMetrics;
   }>;
   localMetrics?: LocalUsageMetrics;
@@ -124,6 +138,7 @@ export interface DailyUsageResponse {
 }
 
 export interface HourlyUsageRow {
+  costBreakdown?: CostBreakdown;
   date: string;
   hour: number;
   /** Tool / integration channel (e.g. `claude`, `cursor`). */
@@ -142,6 +157,8 @@ export interface HourlyUsageResponse {
 }
 
 export interface ModelBreakdownRow {
+  localMetrics?: LocalUsageMetrics;
+  costBreakdown?: CostBreakdown;
   model: string;
   source: string;
   tokens: number;
@@ -150,6 +167,8 @@ export interface ModelBreakdownRow {
 }
 
 export interface ProjectModelBreakdownRow {
+  localMetrics?: LocalUsageMetrics;
+  costBreakdown?: CostBreakdown;
   model: string;
   source: string;
   tokens: number;
@@ -158,6 +177,8 @@ export interface ProjectModelBreakdownRow {
 }
 
 export interface ProjectBreakdownRow {
+  localMetrics?: LocalUsageMetrics;
+  costBreakdown?: CostBreakdown;
   project: string;
   tokens: number;
   costUsd: number;
@@ -195,6 +216,7 @@ export interface UsageDataset {
 }
 
 export interface SyncStatus {
+  upload?: UploadStatus;
   lastSyncAt: string | null;
   lastUploadAt?: string | null;
   /** Server ingest floor; present on cloud sync-status. */
@@ -680,6 +702,7 @@ export async function fetchUsageDatasetThin(
 }
 
 export interface TriggerSyncResult {
+  upload?: UploadStatus;
   ok: boolean;
   results: unknown[];
   message: string;

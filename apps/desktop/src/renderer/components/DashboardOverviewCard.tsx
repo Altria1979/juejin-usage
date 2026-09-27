@@ -59,7 +59,7 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
   const cacheHitRate = showLocalMetrics
     ? cacheHitRateFromSummary(summary)
     : null;
-  const reserveCaption = showLocalMetrics;
+  const reserveCaption = true;
   const metrics = [
     {
       id: 'cost',
@@ -67,7 +67,9 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
       value: summary.totalCostUsd,
       format: formatUsd,
       exactFormat: formatUsd,
-      caption: null as string | null,
+      caption: summary.costBreakdown
+        ? `含补记估算 ${formatUsd(summary.costBreakdown.ledgerEstimatedCostUsd)}`
+        : '暂无拆分',
       trend: {
         comparison: metricTrends.totalCostUsd,
         display: 'percent' as const,
@@ -95,7 +97,7 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
       exactFormat: formatTokensExact,
       caption:
         cacheHitRate == null
-          ? null
+          ? (showLocalMetrics ? '缓存命中率 明细不足' : null)
           : `缓存命中率 ${(cacheHitRate * 100).toFixed(1)}%`,
       trend: {
         comparison: metricTrends.inputTokens,
@@ -133,7 +135,9 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
           >
             <Card.Content className="grid h-full grid-rows-[1.25rem_1fr] content-start gap-3 p-0">
               <div className="flex h-5 min-w-0 items-center justify-between gap-2">
-                {metric.id === 'total-tokens' ? (
+                {metric.id === 'cost' ? (
+                  <CostEstimateLabel summary={summary} />
+                ) : metric.id === 'total-tokens' ? (
                   <TotalTokenLabel
                     showRequestHelp={showLocalMetrics}
                     summary={summary}
@@ -193,20 +197,35 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
   );
 });
 
-/** Prefer complete count; fall back to known evidence without "至少" wording. */
+/** A partial request count is a lower bound. */
 function formatRequestCaption(summary: DashboardUsageSummary): string | null {
   const count = summary.requestCount ?? summary.knownRequestCount;
   if (count == null) return null;
-  return `${count.toLocaleString('zh-CN')} 次请求`;
+  return `${summary.requestCount == null ? '至少 ' : ''}${count.toLocaleString('zh-CN')} 次请求`;
 }
 
-/** OpenUsage / Anthropic-style: cache_read / (input + cache_read + cache_write). */
+/** Explicit unknown cache classification must survive the display boundary. */
 function cacheHitRateFromSummary(summary: DashboardUsageSummary): number | null {
-  const denom =
-    summary.inputTokens +
-    summary.cachedInputTokens +
-    summary.cacheCreationInputTokens;
-  return denom > 0 ? summary.cachedInputTokens / denom : null;
+  return summary.localMetrics?.cacheHitRate ?? null;
+}
+
+function CostEstimateLabel({ summary }: { summary: DashboardUsageSummary }) {
+  const cost = summary.costBreakdown;
+  return (
+    <MetricHelpLabel ariaLabel="预估费用来源说明" heading="预估费用来源" label="预估费用" panel={
+      <div className="grid min-w-56 max-w-72 gap-1.5 text-xs">
+        <p className="font-medium text-foreground">预估费用来源</p>
+        {cost ? <>
+          <div className="flex justify-between gap-4"><span>明细预估</span><span className="font-mono">{formatUsd(cost.detailedEstimatedCostUsd)}</span></div>
+          <div className="flex justify-between gap-4"><span>补记估算</span><span className="font-mono">{formatUsd(cost.ledgerEstimatedCostUsd)}</span></div>
+          <BreakdownRow label="补记 Token" value={cost.ledgerTokens} />
+          <BreakdownRow label="历史未核对 Token" value={cost.unverifiedLedgerTokens} />
+          <p className="leading-4 text-muted">补记缺少输入、输出及缓存分类，费用仅为估算。无法核对的历史补记保留，不自动扣减。</p>
+        </> : <p className="text-muted">暂无拆分：当前服务未提供费用来源信息。</p>}
+        <p className="leading-4 text-muted">总额为预估用量费用，不代表实际账单。</p>
+      </div>
+    } />
+  );
 }
 
 function MetricHelpLabel({
@@ -297,7 +316,7 @@ function CacheHitRateHelpPanel() {
     <div className="grid max-w-56 gap-1.5 text-xs">
       <p className="font-medium text-foreground">缓存命中率</p>
       <p className="leading-4 text-muted">
-        缓存读 ÷（输入 + 缓存读 + 缓存写）
+        缓存读 ÷（输入 + 缓存读 + 缓存写）。补记分类缺失时显示“明细不足”。
       </p>
     </div>
   );
