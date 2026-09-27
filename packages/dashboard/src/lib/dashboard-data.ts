@@ -1,3 +1,4 @@
+import { emptyUsageQuality, mergeUsageQuality, type UsageQuality } from './usage-quality.ts';
 import { parseDailyModelKey } from '@juejin-opensource/jusage-core/daily-model-key';
 import { normalizeProjectName } from '@juejin-opensource/jusage-core/project-label';
 import { addLocalDays } from '@juejin-opensource/jusage-core/timezone';
@@ -145,13 +146,7 @@ export function buildDashboardDataFromDataset(
   );
   const allDailyUsage = selectedApiDays.map(normalizeDailyRow);
   const heatmapDailyUsage = heatmapApiDays.map(normalizeDailyRow);
-  const heatmapDays = heatmapApiDays.map((row) => ({
-    date: row.date,
-    tokens: row.tokens,
-    costUsd: row.costUsd,
-    models: row.models ?? {},
-    projects: row.projects,
-  }));
+  const heatmapDays = heatmapApiDays.map((row) => ({ ...row, models: row.models ?? {} }));
   const dailyUsage = buildRecentSevenDays(allDailyUsage);
   const summary = aggregateDailyRows(allDailyUsage);
   const hourlyApiRows = dataset.hourlyRows ?? [];
@@ -214,6 +209,7 @@ export function buildFilledHourlyForDate(
     upToHour === undefined ? 23 : Math.min(Math.max(upToHour, 0), 23);
   const targetDate = calendarDate(date);
   type HourAgg = {
+    qualityParts: UsageQuality[];
     tokens: number;
     costUsd: number;
     inputTokens: number;
@@ -228,12 +224,14 @@ export function buildFilledHourlyForDate(
     const hour = Number(row.hour);
     if (!Number.isInteger(hour) || hour < 0 || hour > 23) continue;
     const existing = byHour.get(hour) ?? {
+      qualityParts: [] as UsageQuality[],
       tokens: 0,
       costUsd: 0,
       inputTokens: 0,
       outputTokens: 0,
       cachedInputTokens: 0,
     };
+    existing.qualityParts.push(row);
     existing.tokens += row.tokens;
     existing.costUsd += row.costUsd;
     existing.inputTokens += row.inputTokens;
@@ -274,6 +272,7 @@ export function buildFilledHourlyForDate(
       totalTokens: api.tokens > 0 ? api.tokens : inputTokens + outputTokens + cachedInputTokens,
       costUsd: api.costUsd,
       durationMinutes: 0,
+      ...mergeUsageQuality(api.qualityParts),
       ...(api.requestCount !== undefined ? { requestCount: api.requestCount } : {}),
       ...(api.knownRequestCount !== undefined
         ? { knownRequestCount: api.knownRequestCount }
@@ -356,6 +355,10 @@ function buildModelRowsFromDailyModels(
   day: DailyUsageRow,
   sourceFallback: Map<string, string>,
 ): ModelBreakdownRow[] {
+  if (day.modelBreakdown !== undefined) {
+    return day.modelBreakdown.filter((row) => row.tokens > 0).map((row) => ({ ...row }))
+      .sort((a, b) => b.tokens - a.tokens);
+  }
   const entries = Object.entries(day.models ?? {}).filter(
     ([, tokens]) => tokens > 0,
   );
@@ -391,73 +394,64 @@ function buildProjectRowsFromDaily(
   day: DailyUsageRow,
   sourceFallback: Map<string, string>,
 ): ProjectBreakdownRow[] {
-  const collapsed = new Map<
-    string,
-    { project: string; tokens: number; models: Record<string, number> }
-  >();
+  const groups = new Map<string, NonNullable<DailyUsageRow['projects']>>();
   for (const row of day.projects ?? []) {
     if (row.tokens <= 0) continue;
     const project = normalizeProjectName(row.project);
-    const current = collapsed.get(project) ?? {
-      project,
-      tokens: 0,
-      models: {},
-    };
-    current.tokens += row.tokens;
-    for (const [key, tokens] of Object.entries(row.models ?? {})) {
-      if (tokens <= 0) continue;
-      current.models[key] = (current.models[key] ?? 0) + tokens;
-    }
-    collapsed.set(project, current);
+    groups.set(project, [...(groups.get(project) ?? []), row]);
   }
-  const projects = Array.from(collapsed.values());
-  if (projects.length === 0) return [];
+  const projects = [...groups].map(([project, parts]) => ({
+    project, parts, tokens: parts.reduce((sum, row) => sum + row.tokens, 0),
+  }));
+  const tokenTotal = projects.reduce((sum, row) => sum + row.tokens, 0);
+  const legacyCosts = allocateDecimal(day.costUsd, projects.map((row) => row.tokens));
 
-  const dayTokenTotal = projects.reduce((sum, row) => sum + row.tokens, 0);
-  const projectCosts = allocateDecimal(
-    day.costUsd,
-    projects.map((row) => row.tokens),
-  );
-
-  return projects
-    .map((project, projectIndex) => {
-      const modelEntries = Object.entries(project.models ?? {}).filter(
-        ([, tokens]) => tokens > 0,
-      );
-      const modelCosts = allocateDecimal(
-        projectCosts[projectIndex] ?? 0,
-        modelEntries.map(([, tokens]) => tokens),
-      );
-      const models = modelEntries
-        .map(([key, tokens], index) => {
-          const parsed = parseDailyModelKey(key);
-          const source =
-            parsed.source ?? sourceFallback.get(parsed.model) ?? 'unknown';
-          return {
-            model: parsed.model,
-            source,
-            tokens,
-            costUsd: modelCosts[index] ?? 0,
-            pct:
-              project.tokens > 0
-                ? Math.round((tokens / project.tokens) * 1000) / 10
-                : 0,
-          };
-        })
-        .sort((a, b) => b.tokens - a.tokens);
-
-      return {
-        project: project.project,
-        tokens: project.tokens,
-        costUsd: projectCosts[projectIndex] ?? 0,
-        pct:
-          dayTokenTotal > 0
-            ? Math.round((project.tokens / dayTokenTotal) * 1000) / 10
-            : 0,
-        models,
-      };
-    })
-    .sort((a, b) => b.tokens - a.tokens);
+  return projects.map((project, index) => {
+    const costKnown = project.parts.every((row) => row.costUsd !== undefined);
+    const costUsd = costKnown
+      ? project.parts.reduce((sum, row) => sum + row.costUsd!, 0)
+      : legacyCosts[index] ?? 0;
+    let models: ProjectBreakdownRow['models'];
+    if (project.parts.every((row) => row.modelBreakdown !== undefined)) {
+      const modelGroups = new Map<string, ModelBreakdownRow[]>();
+      for (const row of project.parts) for (const model of row.modelBreakdown!) {
+        const key = `${model.source}\0${model.model}`;
+        modelGroups.set(key, [...(modelGroups.get(key) ?? []), model]);
+      }
+      models = [...modelGroups.values()].map((parts) => {
+        const tokens = parts.reduce((sum, row) => sum + row.tokens, 0);
+        return {
+          model: parts[0]!.model, source: parts[0]!.source, tokens,
+          costUsd: parts.reduce((sum, row) => sum + row.costUsd, 0),
+          pct: project.tokens > 0 ? Math.round(tokens / project.tokens * 1000) / 10 : 0,
+          ...mergeUsageQuality(parts),
+        };
+      });
+    } else {
+      const totals = new Map<string, number>();
+      for (const row of project.parts) for (const [key, tokens] of Object.entries(row.models ?? {})) {
+        if (tokens > 0) totals.set(key, (totals.get(key) ?? 0) + tokens);
+      }
+      const entries = [...totals];
+      const costs = allocateDecimal(costUsd, entries.map(([, tokens]) => tokens));
+      // Old servers expose no per-model fee or quality evidence.
+      models = entries.map(([key, tokens], i) => {
+        const parsed = parseDailyModelKey(key);
+        return {
+          model: parsed.model,
+          source: parsed.source ?? sourceFallback.get(parsed.model) ?? 'unknown',
+          tokens, costUsd: costs[i] ?? 0,
+          pct: project.tokens > 0 ? Math.round(tokens / project.tokens * 1000) / 10 : 0,
+        };
+      });
+    }
+    return {
+      project: project.project, tokens: project.tokens, costUsd,
+      pct: tokenTotal > 0 ? Math.round(project.tokens / tokenTotal * 1000) / 10 : 0,
+      ...(costKnown ? mergeUsageQuality(project.parts) : {}),
+      models: models.sort((a, b) => b.tokens - a.tokens),
+    };
+  }).sort((a, b) => b.tokens - a.tokens);
 }
 
 function normalizeDailyRow(
@@ -530,6 +524,7 @@ function normalizeDailyRow(
     // 总 Token 用 API 五类之和；有真实 I/O 时输入/输出可小于总（cache 等不进两卡）。
     totalTokens: row.tokens,
     costUsd: roundCurrency(row.costUsd),
+    ...mergeUsageQuality([row]),
     durationMinutes,
     ...(row.localMetrics
       ? {
@@ -557,6 +552,7 @@ function buildRecentSevenDays(
       day: weekdayForDate(isoDate),
       date: isoDate,
       dateLabel: formatDateLabel(isoDate),
+      ...emptyUsageQuality(),
       inputTokens: 0,
       cachedInputTokens: 0,
       cacheCreationInputTokens: 0,
@@ -602,6 +598,7 @@ function aggregateDailyRows(
 
   return {
     ...totals,
+    ...mergeUsageQuality(rows),
     totalCostUsd: roundCurrency(totals.totalCostUsd),
   };
 }
@@ -677,6 +674,7 @@ function sumHourlyMetrics(
         outputTokens: row.outputTokens,
         totalTokens: row.tokens,
         costUsd: row.costUsd,
+        ...mergeUsageQuality([row]),
         durationMinutes: 0,
         ...(row.localMetrics
           ? {
@@ -720,6 +718,7 @@ function emptyHourlyRow(
     day,
     hour,
     hourLabel,
+    ...emptyUsageQuality(),
     inputTokens: 0,
     cachedInputTokens: 0,
     outputTokens: 0,
@@ -731,20 +730,23 @@ function emptyHourlyRow(
 
 function collapseProjectDistribution(
   projects: ProjectBreakdownRow[],
-): Array<{ label: string; tokens: number; costUsd: number }> {
+): Array<{ label: string; tokens: number; costUsd: number } & UsageQuality> {
   const byName = new Map<
     string,
-    { label: string; tokens: number; costUsd: number }
+    { label: string; tokens: number; costUsd: number; qualityParts: UsageQuality[] }
   >();
   for (const row of projects) {
     const name = normalizeProjectName(row.project);
     const label = name === 'unknown' ? '未知项目' : name;
-    const current = byName.get(name) ?? { label, tokens: 0, costUsd: 0 };
+    const current = byName.get(name) ?? { label, tokens: 0, costUsd: 0, qualityParts: [] as UsageQuality[] };
+    current.qualityParts.push(row);
     current.tokens += row.tokens;
     current.costUsd += row.costUsd;
     byName.set(name, current);
   }
-  return Array.from(byName.values());
+  return Array.from(byName.values()).map(({ qualityParts, ...row }) => ({
+    ...row, ...mergeUsageQuality(qualityParts),
+  }));
 }
 
 function buildDistributions(
@@ -757,18 +759,21 @@ function buildDistributions(
     label: SOURCE_LABELS[source.source] ?? source.source,
     tokens: source.tokens,
     costUsd: source.costUsd,
+    ...mergeUsageQuality([source]),
   }));
   const modelGroups = new Map<
     string,
-    { label: string; tokens: number; costUsd: number }
+    { label: string; tokens: number; costUsd: number; qualityParts: UsageQuality[] }
   >();
 
   for (const row of models) {
     const current = modelGroups.get(row.model) ?? {
       label: row.model,
+      qualityParts: [] as UsageQuality[],
       tokens: 0,
       costUsd: 0,
     };
+    current.qualityParts.push(row);
     current.tokens += row.tokens;
     current.costUsd += row.costUsd;
     modelGroups.set(row.model, current);
@@ -781,7 +786,9 @@ function buildDistributions(
         : [],
     models:
       modelGroups.size > 0
-        ? normalizeDistribution([...modelGroups.values()], summary, 6)
+        ? normalizeDistribution([...modelGroups.values()].map(({ qualityParts, ...row }) => ({
+            ...row, ...mergeUsageQuality(qualityParts),
+          })), summary, 6)
         : [],
     terminals: [],
     projects:
@@ -796,7 +803,7 @@ function buildDistributions(
 }
 
 function normalizeDistribution(
-  rows: Array<{ label: string; tokens: number; costUsd: number }>,
+  rows: Array<{ label: string; tokens: number; costUsd: number } & UsageQuality>,
   summary: DashboardUsageSummary,
   limit = 8,
 ): DashboardDistributionRow[] {
@@ -808,6 +815,7 @@ function normalizeDistribution(
   if (overflow.length > 0) {
     visible.push({
       label: '其他',
+      ...mergeUsageQuality(overflow),
       tokens: overflow.reduce((total, row) => total + row.tokens, 0),
       costUsd: overflow.reduce((total, row) => total + row.costUsd, 0),
     });
@@ -816,10 +824,6 @@ function normalizeDistribution(
   const tokenValues = allocateInteger(
     summary.totalTokens,
     visible.map((row) => row.tokens),
-  );
-  const costValues = allocateDecimal(
-    summary.totalCostUsd,
-    visible.map((row) => row.costUsd || row.tokens),
   );
   const durationValues = allocateInteger(
     summary.totalDurationMinutes,
@@ -831,7 +835,8 @@ function normalizeDistribution(
     label: row.label,
     color: CHART_COLORS[index % CHART_COLORS.length],
     tokens: tokenValues[index] ?? 0,
-    costUsd: costValues[index] ?? 0,
+    costUsd: roundCurrency(row.costUsd),
+    ...mergeUsageQuality([row]),
     durationMinutes: durationValues[index] ?? 0,
   }));
 }

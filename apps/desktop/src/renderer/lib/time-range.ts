@@ -1,10 +1,11 @@
+import { mergeUsageQuality, type UsageQuality } from './usage-quality.ts';
 import type {
   DailyUsageRow,
   ModelBreakdownRow,
   SourceUsageRow,
   UsageSummary,
-} from './api';
-import { localDateDaysAgo, localDateNow } from './stats-timezone';
+} from './api.ts';
+import { localDateDaysAgo, localDateNow } from './stats-timezone.ts';
 
 export type TimeRangeKey = 'week' | 'month' | 'all';
 
@@ -76,6 +77,9 @@ export function buildSummaryFromRange(
     todayCostUsd: Math.round(todayCostUsd * 1e8) / 1e8,
     statsSince,
     bySource,
+    ...mergeUsageQuality(dailyRows),
+    ...(todayRow?.costBreakdown ? { todayCostBreakdown: todayRow.costBreakdown } : {}),
+    ...(todayRow?.localMetrics ? { todayLocalMetrics: todayRow.localMetrics } : {}),
   };
 }
 
@@ -86,7 +90,8 @@ function buildBySourceFromModels(
   type Acc = {
     tokens: number;
     costUsd: number;
-    models: Map<string, { tokens: number; costUsd: number }>;
+    qualityParts: UsageQuality[];
+    models: Map<string, { tokens: number; costUsd: number; qualityParts: UsageQuality[] }>;
   };
   const map = new Map<string, Acc>();
 
@@ -94,12 +99,14 @@ function buildBySourceFromModels(
     if (row.tokens <= 0) continue;
     let src = map.get(row.source);
     if (!src) {
-      src = { tokens: 0, costUsd: 0, models: new Map() };
+      src = { tokens: 0, costUsd: 0, qualityParts: [] as UsageQuality[], models: new Map() };
       map.set(row.source, src);
     }
+    src.qualityParts.push(row);
     src.tokens += row.tokens;
     src.costUsd += row.costUsd;
-    const m = src.models.get(row.model) ?? { tokens: 0, costUsd: 0 };
+    const m = src.models.get(row.model) ?? { tokens: 0, costUsd: 0, qualityParts: [] as UsageQuality[] };
+    m.qualityParts.push(row);
     m.tokens += row.tokens;
     m.costUsd += row.costUsd;
     src.models.set(row.model, m);
@@ -113,12 +120,14 @@ function buildBySourceFromModels(
   return Array.from(map.entries())
     .map(([source, v]) => ({
       source,
+      ...mergeUsageQuality(v.qualityParts),
       tokens: v.tokens,
       costUsd: Math.round(v.costUsd * 1e8) / 1e8,
       pct: grand > 0 ? Math.round((v.tokens / grand) * 1000) / 10 : 0,
       models: Array.from(v.models.entries())
         .map(([model, m]) => ({
           model,
+          ...mergeUsageQuality(m.qualityParts),
           tokens: m.tokens,
           costUsd: Math.round(m.costUsd * 1e8) / 1e8,
           pct: v.tokens > 0 ? Math.round((m.tokens / v.tokens) * 1000) / 10 : 0,

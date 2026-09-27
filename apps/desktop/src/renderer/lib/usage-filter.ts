@@ -1,3 +1,4 @@
+import { emptyUsageQuality, mergeUsageQuality, type UsageQuality } from './usage-quality.ts';
 import { parseDailyModelKey } from '@juejin-opensource/jusage-core/daily-model-key';
 import { addLocalDays } from '@juejin-opensource/jusage-core/timezone';
 import { chartColor } from './chart-data.ts';
@@ -209,9 +210,29 @@ export function filterTrendRowsBySources(opts: {
     });
   };
 
-  const dailyRows = opts.dailyRows.map((row) =>
-    scaleDailyTrendRow(row, shareForDate(row.date)),
-  );
+  const sourceSet = new Set(activeSources);
+  const dailyRows = opts.dailyRows.map((row) => {
+    const day = dayByDate.get(row.date);
+    if (day?.sources === undefined) return scaleDailyTrendRow(row, shareForDate(row.date));
+    const sources = day.sources.filter((source) => sourceInSet(source.source, sourceSet));
+    const quality = mergeUsageQuality(sources);
+    const metrics = quality.localMetrics;
+    const fallback = scaleDailyTrendRow(row, shareForDate(row.date));
+    return {
+      ...fallback,
+      totalTokens: sources.reduce((sum, source) => sum + source.tokens, 0),
+      costUsd: sources.reduce((sum, source) => sum + source.costUsd, 0),
+      inputTokens: metrics?.uncachedInputTokens ?? fallback.inputTokens,
+      uncachedInputTokens: metrics?.uncachedInputTokens ?? fallback.uncachedInputTokens,
+      cachedInputTokens: metrics?.cacheReadTokens ?? fallback.cachedInputTokens,
+      cacheCreationInputTokens: metrics?.cacheWriteTokens ?? fallback.cacheCreationInputTokens,
+      outputTokens: metrics?.outputTokens ?? fallback.outputTokens,
+      costBreakdown: quality.costBreakdown,
+      localMetrics: metrics,
+      requestCount: metrics?.requestCount,
+      knownRequestCount: metrics?.knownRequestCount,
+    };
+  });
 
   // Hourly: filter by source then re-bucket — do not scale all hours by day share.
   const hourlyDate = opts.hourlyDate;
@@ -252,7 +273,7 @@ export function summarizeTrendRows(opts: {
   hourly: boolean;
 }): DashboardUsageSummary {
   const rows = opts.hourly ? opts.hourlyRows : opts.dailyRows;
-  return rows.reduce<DashboardUsageSummary>(
+  const totals = rows.reduce<DashboardUsageSummary>(
     (summary, row) => ({
       inputTokens: summary.inputTokens + row.inputTokens,
       outputTokens: summary.outputTokens + row.outputTokens,
@@ -282,6 +303,7 @@ export function summarizeTrendRows(opts: {
       totalDurationMinutes: 0,
     },
   );
+  return { ...totals, ...mergeUsageQuality(rows) };
 }
 
 /**
@@ -397,10 +419,19 @@ export function filterHeatmapDaysBySources(
       0,
     );
     const share = originalTokens > 0 ? tokens / originalTokens : fallbackShare;
+    const sources = row.sources?.filter((source) => sourceInSet(source.source, new Set(activeSources)));
+    const quality = sources === undefined ? {} : mergeUsageQuality(sources);
     return {
       ...row,
-      tokens: originalTokens > 0 ? tokens : Math.round(row.tokens * share),
-      costUsd: row.costUsd * share,
+      tokens: sources === undefined
+        ? originalTokens > 0 ? tokens : Math.round(row.tokens * share)
+        : sources.reduce((sum, source) => sum + source.tokens, 0),
+      costUsd: sources === undefined ? row.costUsd * share
+        : sources.reduce((sum, source) => sum + source.costUsd, 0),
+      costBreakdown: quality.costBreakdown,
+      localMetrics: quality.localMetrics,
+      sources,
+      modelBreakdown: row.modelBreakdown?.filter((model) => sourceInSet(model.source, new Set(activeSources))),
       models,
     };
   });
@@ -454,10 +485,13 @@ export function filterProjectRowsBySources(
     if (tokens <= 0) continue;
     const costUsd = models.reduce((sum, model) => sum + model.costUsd, 0);
 
+    const quality = mergeUsageQuality(models);
     next.push({
       ...row,
       tokens,
       costUsd,
+      costBreakdown: quality.costBreakdown,
+      localMetrics: quality.localMetrics,
       models: models.map((model) => ({
         ...model,
         pct: tokens > 0 ? Math.round((model.tokens / tokens) * 1_000) / 10 : 0,
@@ -488,14 +522,16 @@ export function buildToolModelDistributions(
     color: chartColor(index),
     tokens: row.tokens,
     costUsd: row.costUsd,
+    ...mergeUsageQuality([row]),
     durationMinutes: 0,
   }));
 
-  const modelTotals = new Map<string, { tokens: number; costUsd: number }>();
+  const modelTotals = new Map<string, { tokens: number; costUsd: number; qualityParts: UsageQuality[] }>();
   for (const tool of activeTools) {
     for (const model of tool.models) {
       if (!model.model || model.tokens <= 0) continue;
-      const entry = modelTotals.get(model.model) ?? { tokens: 0, costUsd: 0 };
+      const entry = modelTotals.get(model.model) ?? { tokens: 0, costUsd: 0, qualityParts: [] as UsageQuality[] };
+      entry.qualityParts.push(model);
       entry.tokens += model.tokens;
       entry.costUsd += model.costUsd;
       modelTotals.set(model.model, entry);
@@ -510,6 +546,7 @@ export function buildToolModelDistributions(
       color: chartColor(index),
       tokens: usage.tokens,
       costUsd: usage.costUsd,
+      ...mergeUsageQuality(usage.qualityParts),
       durationMinutes: 0,
     }));
 
@@ -524,6 +561,7 @@ function scaleDailyTrendRow(
   if (share <= 0) {
     return {
       ...row,
+      ...emptyUsageQuality(),
       inputTokens: 0,
       cachedInputTokens: 0,
       cacheCreationInputTokens: 0,
@@ -541,6 +579,8 @@ function scaleDailyTrendRow(
   const cachedInputTokens = Math.round(row.cachedInputTokens * share);
   return {
     ...row,
+    costBreakdown: undefined,
+    localMetrics: undefined,
     inputTokens,
     cachedInputTokens,
     cacheCreationInputTokens: Math.round(row.cacheCreationInputTokens * share),
@@ -563,6 +603,7 @@ function scaleHourlyTrendRow(
   if (share <= 0) {
     return {
       ...row,
+      ...emptyUsageQuality(),
       inputTokens: 0,
       cachedInputTokens: 0,
       outputTokens: 0,
@@ -578,6 +619,8 @@ function scaleHourlyTrendRow(
   const cachedInputTokens = Math.round(row.cachedInputTokens * share);
   return {
     ...row,
+    costBreakdown: undefined,
+    localMetrics: undefined,
     inputTokens,
     cachedInputTokens,
     outputTokens: Math.round(row.outputTokens * share),

@@ -1,3 +1,4 @@
+import { mergeUsageQuality, type UsageQuality } from './usage-quality.ts';
 import { normalizeProjectName } from '@juejin-opensource/jusage-core/project-label';
 import type { DailyUsageRow, HourlyUsageRow, ModelBreakdownRow } from './api.ts';
 
@@ -9,7 +10,7 @@ export const HEATMAP_LOOKBACK_DAYS = 365;
 export type DashboardChartMetric = 'tokens' | 'cost' | 'duration';
 export type DashboardDistributionMetric = Exclude<DashboardChartMetric, 'duration'>;
 
-export interface DashboardHourlyUsageRow {
+export interface DashboardHourlyUsageRow extends UsageQuality {
   day: (typeof DASHBOARD_WEEKDAYS)[number];
   hour: number;
   hourLabel: string;
@@ -25,7 +26,7 @@ export interface DashboardHourlyUsageRow {
   knownRequestCount?: number;
 }
 
-export interface DashboardDailyUsageRow {
+export interface DashboardDailyUsageRow extends UsageQuality {
   day: (typeof DASHBOARD_WEEKDAYS)[number];
   date: string;
   dateLabel: string;
@@ -43,7 +44,7 @@ export interface DashboardDailyUsageRow {
   knownRequestCount?: number;
 }
 
-export interface DashboardUsageSummary {
+export interface DashboardUsageSummary extends UsageQuality {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
@@ -99,7 +100,7 @@ export interface DashboardMetricTrends {
   totalCostUsd: DashboardMetricTrend | null;
 }
 
-export interface DashboardDistributionRow {
+export interface DashboardDistributionRow extends UsageQuality {
   id: string;
   label: string;
   color: string;
@@ -115,14 +116,14 @@ export interface DashboardDistributions {
   projects: DashboardDistributionRow[];
 }
 
-export interface DashboardModelUsageRow {
+export interface DashboardModelUsageRow extends UsageQuality {
   model: string;
   tokens: number;
   costUsd: number;
   pct: number;
 }
 
-export interface DashboardProjectModelUsageRow {
+export interface DashboardProjectModelUsageRow extends UsageQuality {
   model: string;
   source: string;
   tokens: number;
@@ -130,7 +131,7 @@ export interface DashboardProjectModelUsageRow {
   pct: number;
 }
 
-export interface DashboardToolUsageRow {
+export interface DashboardToolUsageRow extends UsageQuality {
   source: string;
   tokens: number;
   costUsd: number;
@@ -138,7 +139,7 @@ export interface DashboardToolUsageRow {
   models: DashboardModelUsageRow[];
 }
 
-export interface DashboardProjectUsageRow {
+export interface DashboardProjectUsageRow extends UsageQuality {
   project: string;
   label: string;
   tokens: number;
@@ -147,11 +148,11 @@ export interface DashboardProjectUsageRow {
   models: DashboardProjectModelUsageRow[];
 }
 
-export interface DashboardToolUsageInput {
+export interface DashboardToolUsageInput extends UsageQuality {
   source: string;
   tokens: number;
   costUsd: number;
-  models: Array<{ model: string; tokens: number; costUsd: number }>;
+  models: Array<{ model: string; tokens: number; costUsd: number } & UsageQuality>;
 }
 
 export interface DashboardMockData {
@@ -196,25 +197,39 @@ export const emptyDashboardData: DashboardMockData = {
   projectModelUsage: [],
 };
 
-export function buildToolModelUsage(rows: DashboardToolUsageInput[], totalTokens = 0): DashboardToolUsageRow[] {
-  const tools = new Map<string, { tokens: number; costUsd: number; models: Map<string, { tokens: number; costUsd: number }> }>();
+export function buildToolModelUsage(
+  rows: DashboardToolUsageInput[],
+  totalTokens = 0,
+): DashboardToolUsageRow[] {
+  const groups = new Map<string, DashboardToolUsageInput[]>();
   for (const row of rows) {
     if (!row.source || row.tokens <= 0) continue;
-    const tool = tools.get(row.source) ?? { tokens: 0, costUsd: 0, models: new Map() };
-    tool.tokens += row.tokens;
-    tool.costUsd += row.costUsd;
-    for (const model of row.models) {
-      const current = tool.models.get(model.model) ?? { tokens: 0, costUsd: 0 };
-      current.tokens += model.tokens;
-      current.costUsd += model.costUsd;
-      tool.models.set(model.model, current);
-    }
-    tools.set(row.source, tool);
+    groups.set(row.source, [...(groups.get(row.source) ?? []), row]);
   }
-  return [...tools.entries()].map(([source, tool]) => ({
-    source, tokens: tool.tokens, costUsd: Math.round(tool.costUsd * 100) / 100, pct: totalTokens > 0 ? (tool.tokens / totalTokens) * 100 : 0,
-    models: [...tool.models.entries()].map(([model, usage]) => ({ model, tokens: usage.tokens, costUsd: Math.round(usage.costUsd * 100) / 100, pct: tool.tokens > 0 ? (usage.tokens / tool.tokens) * 100 : 0 })),
-  })).sort((a, b) => b.tokens - a.tokens);
+  const grand = totalTokens > 0 ? totalTokens : rows.reduce((sum, row) => sum + row.tokens, 0);
+  return [...groups].map(([source, parts]) => {
+    const tokens = parts.reduce((sum, row) => sum + row.tokens, 0);
+    const models = new Map<string, DashboardToolUsageInput['models']>();
+    for (const row of parts) for (const model of row.models) {
+      if (!model.model || model.tokens <= 0) continue;
+      models.set(model.model, [...(models.get(model.model) ?? []), model]);
+    }
+    return {
+      source, tokens,
+      costUsd: Math.round(parts.reduce((sum, row) => sum + row.costUsd, 0) * 100) / 100,
+      pct: grand > 0 ? Math.round(tokens / grand * 1000) / 10 : 0,
+      ...mergeUsageQuality(parts),
+      models: [...models].map(([model, values]) => {
+        const modelTokens = values.reduce((sum, row) => sum + row.tokens, 0);
+        return {
+          model, tokens: modelTokens,
+          costUsd: Math.round(values.reduce((sum, row) => sum + row.costUsd, 0) * 100) / 100,
+          pct: tokens > 0 ? Math.round(modelTokens / tokens * 1000) / 10 : 0,
+          ...mergeUsageQuality(values),
+        };
+      }).sort((a, b) => b.tokens - a.tokens),
+    };
+  }).sort((a, b) => b.tokens - a.tokens);
 }
 
 export function buildProjectModelUsage(
@@ -223,13 +238,15 @@ export function buildProjectModelUsage(
     tokens: number;
     costUsd: number;
     pct?: number;
+    costBreakdown?: UsageQuality['costBreakdown'];
+    localMetrics?: UsageQuality['localMetrics'];
     models?: Array<{
       model: string;
       source: string;
       tokens: number;
       costUsd: number;
       pct?: number;
-    }>;
+    } & UsageQuality>;
   }>,
   totalTokens = 0,
 ): DashboardProjectUsageRow[] {
@@ -237,11 +254,12 @@ export function buildProjectModelUsage(
     string,
     {
       project: string;
+      qualityParts: UsageQuality[];
       tokens: number;
       costUsd: number;
       models: Map<
         string,
-        { model: string; source: string; tokens: number; costUsd: number }
+        { model: string; source: string; tokens: number; costUsd: number; qualityParts: UsageQuality[] }
       >;
     }
   >();
@@ -251,10 +269,12 @@ export function buildProjectModelUsage(
     const project = normalizeProjectName(row.project);
     const current = byProject.get(project) ?? {
       project,
+      qualityParts: [] as UsageQuality[],
       tokens: 0,
       costUsd: 0,
       models: new Map(),
     };
+    current.qualityParts.push(row);
     current.tokens += row.tokens;
     current.costUsd += row.costUsd;
     for (const model of row.models ?? []) {
@@ -263,9 +283,11 @@ export function buildProjectModelUsage(
       const existing = current.models.get(pairKey) ?? {
         model: model.model,
         source: model.source,
+        qualityParts: [] as UsageQuality[],
         tokens: 0,
         costUsd: 0,
       };
+      existing.qualityParts.push(model);
       existing.tokens += model.tokens;
       existing.costUsd += model.costUsd;
       current.models.set(pairKey, existing);
@@ -284,6 +306,7 @@ export function buildProjectModelUsage(
       project: row.project,
       label: row.project === 'unknown' ? '未知项目' : row.project,
       tokens: row.tokens,
+      ...mergeUsageQuality(row.qualityParts),
       costUsd: Math.round(row.costUsd * 100) / 100,
       pct: tokenTotal > 0 ? (row.tokens / tokenTotal) * 100 : 0,
       models: [...row.models.values()]
@@ -291,6 +314,7 @@ export function buildProjectModelUsage(
           model: model.model,
           source: model.source,
           tokens: model.tokens,
+          ...mergeUsageQuality(model.qualityParts),
           costUsd: Math.round(model.costUsd * 100) / 100,
           pct: row.tokens > 0 ? (model.tokens / row.tokens) * 100 : 0,
         }))
@@ -299,8 +323,8 @@ export function buildProjectModelUsage(
     .sort((a, b) => b.tokens - a.tokens);
 }
 
-export function aggregateUsage(rows: Array<Pick<DashboardHourlyUsageRow, 'inputTokens' | 'outputTokens' | 'cachedInputTokens' | 'totalTokens' | 'costUsd' | 'durationMinutes'> & { requestCount?: number | null; knownRequestCount?: number }>): DashboardUsageSummary {
-  return rows.reduce<DashboardUsageSummary>((total, row) => ({
+export function aggregateUsage(rows: Array<Pick<DashboardHourlyUsageRow, 'inputTokens' | 'outputTokens' | 'cachedInputTokens' | 'totalTokens' | 'costUsd' | 'durationMinutes'> & UsageQuality & { requestCount?: number | null; knownRequestCount?: number }>): DashboardUsageSummary {
+  const totals = rows.reduce<DashboardUsageSummary>((total, row) => ({
     inputTokens: total.inputTokens + row.inputTokens,
     outputTokens: total.outputTokens + row.outputTokens,
     cachedInputTokens: total.cachedInputTokens + (row.cachedInputTokens ?? 0),
@@ -322,10 +346,11 @@ export function aggregateUsage(rows: Array<Pick<DashboardHourlyUsageRow, 'inputT
     totalCostUsd: 0,
     totalDurationMinutes: 0,
   });
+  return { ...totals, ...mergeUsageQuality(rows) };
 }
 
 export function toHeatmapDaysFromDashboard(rows: DashboardDailyUsageRow[]): DailyUsageRow[] {
-  return rows.map((row) => ({ date: row.date, tokens: row.totalTokens, costUsd: row.costUsd, models: {} }));
+  return rows.map((row) => ({ date: row.date, tokens: row.totalTokens, costUsd: row.costUsd, ...mergeUsageQuality([row]), models: {} }));
 }
 
 export function buildMetricChanges(rows: DashboardDailyUsageRow[]): DashboardMetricChanges {
