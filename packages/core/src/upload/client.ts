@@ -315,7 +315,13 @@ export async function settleUploadSnapshots(
     const latest = current.get(item.key);
     if (latest && bucketHash(latest) !== bucketHash(snapshot)) {
       return [
-        { ...item, snapshot: { ...latest }, attempts: 0, nextRetryAt: null },
+        {
+          ...item,
+          snapshot: { ...latest },
+          event: bucketToIngestEvent(latest, deviceId) ?? undefined,
+          attempts: 0,
+          nextRetryAt: null,
+        },
       ];
     }
     if (item.snapshot && bucketHash(item.snapshot) !== bucketHash(snapshot))

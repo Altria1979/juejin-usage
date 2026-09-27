@@ -271,6 +271,7 @@ test('late local growth keeps newest pending snapshot and never confirms unsent 
       bucketHash(aggregateForIngest([bucket])[0]!),
     );
     assert.equal(slot.backfill?.items[0]?.snapshot?.input_tokens, 150);
+    assert.equal(slot.backfill?.items[0]?.event?.usage.input_tokens, 150);
     assert.equal((await getUploadStatus(dir, config(dir))).state, 'pending');
     await drainBackfillRound(dir, config(dir));
     assert.equal((await getUploadStatus(dir, config(dir))).state, 'confirmed');
@@ -339,6 +340,19 @@ test('live tasks hold below or without ingest floor, then recover when it expand
 test('readback compares all token classes, normalized conversations and explicit cost', () => {
   const event = bucketToIngestEvent(aggregateForIngest([row()])[0]!, deviceId)!;
   assert.equal(eventsMatch(event, { ...event, conversations_count: 0 }), true);
+  for (const invalid of [
+    -1,
+    0.5,
+    '1',
+    null,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+  ]) {
+    assert.equal(
+      eventsMatch(event, { ...event, conversations_count: invalid as number }),
+      false,
+    );
+  }
   assert.equal(eventsMatch(event, { ...event, conversations_count: 2 }), false);
   assert.equal(eventsMatch(event, { ...event, reported_cost_usd: 1 }), false);
   for (const field of Object.keys(event.usage) as Array<
@@ -570,7 +584,46 @@ test('a saturated smallest readback range is incomplete rather than proof of abs
 
 test('corrupt upload state fails closed without replacing the pending file', async () => {
   await harness(async (dir) => {
-    for (const broken of ['{truncated', '{"version":2}']) {
+    const malformedSlots = [
+      { buckets: {}, backfill: { items: null } },
+      { buckets: [] },
+      {
+        buckets: {},
+        backfill: { items: [{ key: 'bad', attempts: -1, nextRetryAt: null }] },
+      },
+      {
+        buckets: {},
+        backfill: {
+          items: [{ key: 'bad', attempts: 0, nextRetryAt: null, snapshot: {} }],
+        },
+      },
+      {
+        buckets: {},
+        backfill: {
+          items: [
+            {
+              key: ingestBucketKey(row()),
+              attempts: 0,
+              nextRetryAt: null,
+              snapshot: row(),
+              event: { usage: {} },
+            },
+          ],
+        },
+      },
+    ];
+    const brokenFiles = [
+      '{truncated',
+      '{"version":2}',
+      '{"version":2,"remotes":[]}',
+      ...malformedSlots.map((slot) =>
+        JSON.stringify({
+          version: 2,
+          remotes: { [apiUrl]: { devices: { [deviceId]: slot } } },
+        }),
+      ),
+    ];
+    for (const broken of brokenFiles) {
       const statePath = join(dir, 'upload.state.json');
       await writeFile(statePath, broken);
       let calls = 0;

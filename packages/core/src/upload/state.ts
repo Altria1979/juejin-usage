@@ -105,13 +105,127 @@ function cloneSlot(slot: UploadSlotState | undefined): UploadSlotState {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+function nonnegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+function optionalDate(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === 'string' && Number.isFinite(Date.parse(value)))
+  );
+}
+const TOKEN_FIELDS = [
+  'input_tokens',
+  'output_tokens',
+  'cached_input_tokens',
+  'cache_creation_input_tokens',
+  'reasoning_output_tokens',
+] as const;
+function validCost(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+  );
+}
+function validSnapshot(value: unknown): value is IngestBucket {
+  return (
+    isRecord(value) &&
+    ['source', 'model', 'hour_start'].every(
+      (key) => typeof value[key] === 'string',
+    ) &&
+    optionalDate(value.hour_start) &&
+    (value.collector === undefined || typeof value.collector === 'string') &&
+    [...TOKEN_FIELDS, 'total_tokens', 'conversation_count'].every((key) =>
+      nonnegativeInteger(value[key]),
+    ) &&
+    validCost(value.reported_cost_usd)
+  );
+}
+function validEvent(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    ['event_id', 'occurred_at', 'integration', 'collector', 'model'].every(
+      (key) => typeof value[key] === 'string',
+    ) &&
+    optionalDate(value.occurred_at) &&
+    isRecord(value.usage) &&
+    TOKEN_FIELDS.every((key) =>
+      nonnegativeInteger((value.usage as Record<string, unknown>)[key]),
+    ) &&
+    (value.conversations_count === undefined ||
+      nonnegativeInteger(value.conversations_count)) &&
+    (value.conversation_ref === undefined ||
+      typeof value.conversation_ref === 'string') &&
+    validCost(value.reported_cost_usd)
+  );
+}
+function validSlot(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.buckets) ||
+    !Object.values(value.buckets).every((hash) => typeof hash === 'string')
+  )
+    return false;
+  if (
+    value.needsFullScan !== undefined &&
+    typeof value.needsFullScan !== 'boolean'
+  )
+    return false;
+  if (
+    value.repairVersion !== undefined &&
+    !nonnegativeInteger(value.repairVersion)
+  )
+    return false;
+  if (
+    !optionalDate(value.lastAttemptAt) ||
+    !optionalDate(value.lastConfirmedAt) ||
+    (value.lastError != null && typeof value.lastError !== 'string')
+  )
+    return false;
+  if (value.backfill === undefined) return true;
+  if (
+    !isRecord(value.backfill) ||
+    !Array.isArray(value.backfill.items) ||
+    !optionalDate(value.backfill.enqueuedSince)
+  )
+    return false;
+  const seen = new Set<string>();
+  for (const item of value.backfill.items) {
+    if (
+      !isRecord(item) ||
+      typeof item.key !== 'string' ||
+      seen.has(item.key) ||
+      !nonnegativeInteger(item.attempts) ||
+      !optionalDate(item.nextRetryAt)
+    )
+      return false;
+    seen.add(item.key);
+    if (
+      item.snapshot !== undefined &&
+      (!validSnapshot(item.snapshot) ||
+        ingestBucketKey(item.snapshot) !== item.key)
+    )
+      return false;
+    if (item.event !== undefined && (!item.snapshot || !validEvent(item.event)))
+      return false;
+  }
+  return true;
+}
 function isV2(parsed: unknown): parsed is UploadStateFileV2 {
   return (
-    typeof parsed === 'object' &&
-    parsed !== null &&
-    (parsed as UploadStateFileV2).version === 2 &&
-    typeof (parsed as UploadStateFileV2).remotes === 'object' &&
-    (parsed as UploadStateFileV2).remotes !== null
+    isRecord(parsed) &&
+    parsed.version === 2 &&
+    isRecord(parsed.remotes) &&
+    Object.values(parsed.remotes).every(
+      (remote) =>
+        isRecord(remote) &&
+        isRecord(remote.devices) &&
+        Object.values(remote.devices).every(validSlot),
+    )
   );
 }
 
@@ -131,11 +245,10 @@ export async function loadUploadStateFile(
     }
     // Only a recognized v1 file may migrate. A malformed v2 must not erase pending work.
     if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
+      isRecord(parsed) &&
       !('version' in parsed) &&
-      typeof (parsed as UploadStateFileV1).buckets === 'object' &&
-      (parsed as UploadStateFileV1).buckets !== null
+      isRecord(parsed.buckets) &&
+      Object.values(parsed.buckets).every((hash) => typeof hash === 'string')
     ) {
       return emptyV2();
     }

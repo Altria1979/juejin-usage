@@ -8,8 +8,11 @@ export interface RemoteEvent extends Omit<
   reported_cost_usd?: number | null;
 }
 
-function conversationCount(value: number | undefined): number {
-  return Math.max(1, value ?? 1);
+function conversationCount(value: unknown): number | null {
+  if (value === undefined) return 1;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? Math.max(1, value)
+    : null;
 }
 
 /** Stable identity and transmitted values matter; the API may shift occurred_at by +8h. */
@@ -24,10 +27,9 @@ export function eventsMatch(
     sent.model !== remote.model
   )
     return false;
-  if (
-    conversationCount(sent.conversations_count) !==
-    conversationCount(remote.conversations_count)
-  )
+  const sentCount = conversationCount(sent.conversations_count);
+  const remoteCount = conversationCount(remote.conversations_count);
+  if (sentCount === null || remoteCount === null || sentCount !== remoteCount)
     return false;
   for (const field of [
     'input_tokens',
