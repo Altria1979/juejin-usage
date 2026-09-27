@@ -9,6 +9,10 @@ import {
 } from '@/lib/api';
 import { isMockDataEnabled } from '@/lib/env';
 import { createMockLeaderboardOverview } from '@/lib/leaderboard-mock-data';
+import {
+  canRefreshLeaderboard,
+  createLeaderboardRequestQueue,
+} from '@/lib/leaderboard-refresh';
 
 interface LeaderboardDataState {
   data: LeaderboardOverviewResponse | null;
@@ -17,7 +21,7 @@ interface LeaderboardDataState {
   error: string | null;
 }
 
-/** Foreground poll interval; rAF pauses when the tab is backgrounded. */
+/** Poll only while the page is visible, for both web and local CLI. */
 const POLL_MS = 10_000;
 
 function requestKey(range: LeaderboardRange, filters: LeaderboardFilters) {
@@ -30,7 +34,9 @@ export function useLeaderboardData(
 ) {
   const mockEnabled = isMockDataEnabled();
   const cliBackend = isCliBackend();
-  const { authStatus } = useJuejinAuth();
+  const { authStatus, userId } = useJuejinAuth();
+  const authLoading = !cliBackend && !mockEnabled && authStatus === 'loading';
+  const requestsRef = useRef(createLeaderboardRequestQueue<LeaderboardOverviewResponse>());
   const [revision, setRevision] = useState(0);
   const lastKeyRef = useRef<string | null>(null);
   const manualReloadRef = useRef(false);
@@ -47,11 +53,11 @@ export function useLeaderboardData(
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    const requests = requestsRef.current;
     const key = requestKey(range, filters);
 
     // Server: wait for user/get to settle so authenticated calls can send user_id.
-    if (!cliBackend && !mockEnabled && authStatus === 'loading') {
+    if (authLoading) {
       setState((current) => ({
         ...current,
         loading: current.data == null,
@@ -59,7 +65,7 @@ export function useLeaderboardData(
         error: null,
       }));
       return () => {
-        cancelled = true;
+        requests.invalidate();
       };
     }
 
@@ -91,58 +97,50 @@ export function useLeaderboardData(
       return current;
     });
 
-    const request = mockEnabled
-      ? Promise.resolve(createMockLeaderboardOverview(range, filters))
-      : fetchLeaderboardOverview(range, undefined, filters);
-
-    request
-      .then((data) => {
-        if (cancelled) return;
+    requests.schedule({
+      canStart: () => !document.hidden,
+      load: () => mockEnabled
+        ? Promise.resolve(createMockLeaderboardOverview(range, filters))
+        : fetchLeaderboardOverview(range, undefined, filters),
+      onSuccess: (data) => {
         lastKeyRef.current = key;
         setState({ data, loading: false, refreshing: false, error: null });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
+      },
+      onError: (error: unknown) => {
         setState((current) => ({
           data: current.data,
           loading: false,
           refreshing: false,
           error: error instanceof Error ? error.message : '排行榜加载失败',
         }));
-      });
+      },
+    });
 
     return () => {
-      cancelled = true;
+      requests.invalidate();
     };
-  }, [range, revision, mockEnabled, cliBackend, authStatus, filters.model, filters.tool]);
+  }, [range, revision, mockEnabled, authLoading, authStatus, userId, filters.model, filters.tool]);
 
-  // CLI local API has no push to the browser; rAF ~10s poll + focus reload.
+  // Neither backend pushes leaderboard updates to the page.
   useEffect(() => {
-    if (!isCliBackend()) return;
-
-    let rafId = 0;
-    let last = performance.now();
-
-    const tick = (now: number) => {
-      if (now - last >= POLL_MS) {
-        last = now;
-        reload({ silent: true });
-      }
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-
-    const onFocus = () => {
-      last = performance.now();
+    const refreshIfReady = () => {
+      if (!canRefreshLeaderboard({
+        hidden: document.hidden,
+        authLoading,
+        inFlight: requestsRef.current.isRunning(),
+      })) return;
       reload({ silent: true });
     };
-    window.addEventListener('focus', onFocus);
+    const intervalId = window.setInterval(refreshIfReady, POLL_MS);
+    window.addEventListener('focus', refreshIfReady);
+    document.addEventListener('visibilitychange', refreshIfReady);
 
     return () => {
-      cancelAnimationFrame(rafId);
-      window.removeEventListener('focus', onFocus);
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshIfReady);
+      document.removeEventListener('visibilitychange', refreshIfReady);
     };
-  }, [reload]);
+  }, [reload, authLoading]);
 
   return {
     ...state,
