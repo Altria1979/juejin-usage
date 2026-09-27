@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { lock } from 'proper-lockfile';
 
 import type { IngestBucket } from '../types.js';
 import { ingestBucketKey } from '../queue/keys.js';
@@ -10,6 +11,8 @@ export interface BackfillItem {
   key: string;
   attempts: number;
   nextRetryAt: string | null;
+  /** Exact local snapshot persisted before its normalized event is sent. */
+  snapshot?: IngestBucket;
 }
 
 export interface BackfillState {
@@ -23,6 +26,19 @@ export interface UploadSlotState {
   backfill?: BackfillState;
   /** Set when live ingest fails; next upload forces a full queue scan. */
   needsFullScan?: boolean;
+  /** Enqueued repair version; does not mean remote confirmation succeeded. */
+  repairVersion?: number;
+  lastAttemptAt?: string | null;
+  lastConfirmedAt?: string | null;
+  lastError?: string | null;
+}
+
+export interface UploadStatus {
+  state: 'disabled' | 'confirmed' | 'pending' | 'failed';
+  pendingBuckets: number;
+  lastAttemptAt: string | null;
+  lastConfirmedAt: string | null;
+  message?: string;
 }
 
 /** v2: per-(apiUrl, deviceId) slots so remotes and machines do not share pointers. */
@@ -66,13 +82,17 @@ function emptyV2(): UploadStateFileV2 {
 
 function cloneBackfill(backfill: BackfillState | undefined): BackfillState {
   return {
-    items: (backfill?.items ?? []).map((item) => ({ ...item })),
+    items: (backfill?.items ?? []).map((item) => ({
+      ...item,
+      ...(item.snapshot ? { snapshot: { ...item.snapshot } } : {}),
+    })),
     enqueuedSince: backfill?.enqueuedSince ?? null,
   };
 }
 
 function cloneSlot(slot: UploadSlotState | undefined): UploadSlotState {
   return {
+    ...slot,
     buckets: { ...(slot?.buckets ?? {}) },
     backfill: cloneBackfill(slot?.backfill),
     ...(slot?.needsFullScan ? { needsFullScan: true } : {}),
@@ -90,7 +110,9 @@ function isV2(parsed: unknown): parsed is UploadStateFileV2 {
 }
 
 /** Load full file; migrates v1 `{ buckets }` into an empty v2 shell (caller picks slot). */
-export async function loadUploadStateFile(dataDir: string): Promise<UploadStateFileV2> {
+export async function loadUploadStateFile(
+  dataDir: string,
+): Promise<UploadStateFileV2> {
   const path = uploadStatePath(dataDir);
   if (!existsSync(path)) return emptyV2();
   try {
@@ -101,11 +123,22 @@ export async function loadUploadStateFile(dataDir: string): Promise<UploadStateF
         remotes: parsed.remotes ?? {},
       };
     }
-    // v1: discard flat buckets — they are not bound to apiUrl/deviceId.
-    // Catch-up uses remote dataThrough watermark instead of carrying stale hashes.
-    return emptyV2();
-  } catch {
-    return emptyV2();
+    // Only a recognized v1 file may migrate. A malformed v2 must not erase pending work.
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      !('version' in parsed) &&
+      typeof (parsed as UploadStateFileV1).buckets === 'object' &&
+      (parsed as UploadStateFileV1).buckets !== null
+    ) {
+      return emptyV2();
+    }
+    throw new Error('Unrecognized upload state format');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyV2();
+    throw new Error('上传状态读取失败，已暂停上传以保留待确认记录', {
+      cause: error,
+    });
   }
 }
 
@@ -113,11 +146,72 @@ export async function saveUploadStateFile(
   dataDir: string,
   state: UploadStateFileV2,
 ): Promise<void> {
-  await writeFile(
-    uploadStatePath(dataDir),
-    `${JSON.stringify(state, null, 2)}\n`,
-    'utf8',
+  await mkdir(dataDir, { recursive: true });
+  const destination = uploadStatePath(dataDir);
+  const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    const handle = await open(temporary, 'wx', 0o600);
+    try {
+      await handle.writeFile(`${JSON.stringify(state, null, 2)}\n`, 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await rename(temporary, destination);
+        break;
+      } catch (error) {
+        if (
+          attempt >= 8 ||
+          !['EPERM', 'EACCES', 'EBUSY'].includes(
+            (error as NodeJS.ErrnoException).code ?? '',
+          )
+        )
+          throw error;
+        await new Promise((resolve) => setTimeout(resolve, 20 * 2 ** attempt));
+      }
+    }
+  } finally {
+    await unlink(temporary).catch(() => undefined);
+  }
+}
+
+const uploadLocks = new Map<string, Promise<void>>();
+
+/** Serialize live, background and calibration writes, including other processes. */
+export async function withUploadLock<T>(
+  dataDir: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const previous = uploadLocks.get(dataDir) ?? Promise.resolve();
+  let releaseGate!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  const tail = previous.then(
+    () => gate,
+    () => gate,
   );
+  uploadLocks.set(dataDir, tail);
+  await previous.catch(() => undefined);
+  let releaseFile: (() => Promise<void>) | undefined;
+  try {
+    await mkdir(dataDir, { recursive: true });
+    releaseFile = await lock(uploadStatePath(dataDir), {
+      realpath: false,
+      stale: 60_000,
+      retries: { retries: 8, minTimeout: 250, maxTimeout: 2_000 },
+    });
+    return await fn();
+  } finally {
+    try {
+      await releaseFile?.();
+    } finally {
+      releaseGate();
+      if (uploadLocks.get(dataDir) === tail) uploadLocks.delete(dataDir);
+    }
+  }
 }
 
 export function getUploadSlot(
@@ -160,7 +254,9 @@ export function clearUploadSlot(
 }
 
 /** @deprecated Prefer getUploadSlot — kept for callers that still expect flat buckets. */
-export async function loadUploadState(dataDir: string): Promise<UploadSlotState> {
+export async function loadUploadState(
+  dataDir: string,
+): Promise<UploadSlotState> {
   const file = await loadUploadStateFile(dataDir);
   const urls = Object.keys(file.remotes);
   if (urls.length !== 1) return { buckets: {}, backfill: { items: [] } };

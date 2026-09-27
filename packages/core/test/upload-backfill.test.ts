@@ -189,11 +189,11 @@ test('shouldCommitBackfillBatch rejects unknown floor and floored events', () =>
       ingestMinIso: '2026-08-04T00:00:00.000Z',
       eventHourStarts: ['2026-08-18T00:00:00.000Z'],
     }),
-    true,
+    false,
   );
   assert.equal(
     shouldCommitBackfillBatch({
-      accepted: 4,
+      accepted: 1,
       duplicate: 0,
       ingestMinIso: '2026-08-04T00:00:00.000Z',
       eventHourStarts: ['2026-08-18T00:00:00.000Z'],

@@ -6,10 +6,7 @@ import test from 'node:test';
 
 import { daysAgoIso } from '../src/config.js';
 import { appendBuckets } from '../src/queue/index.js';
-import {
-  DEFAULT_STATS_TIMEZONE,
-  localDateAndHour,
-} from '../src/timezone.js';
+import { DEFAULT_STATS_TIMEZONE, localDateAndHour } from '../src/timezone.js';
 import type { QueueBucket, TudConfig } from '../src/types.js';
 import {
   applyCalibrateSelectedDates,
@@ -153,15 +150,33 @@ test('applyCalibrateSelectedDates reports the failing date and window on 422', a
   const date = localDateAndHour(hour, DEFAULT_STATS_TIMEZONE).date;
   const originalFetch = globalThis.fetch;
 
-  globalThis.fetch = (async () =>
-    new Response(
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    if (String(input).includes('tud-usage-device-events'))
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            events: [],
+            ingest_min_occurred_at: '2020-01-01T00:00:00.000Z',
+          },
+        }),
+      );
+    if (String(input).includes('tud-sync-status'))
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { ingestMinOccurredAt: '2020-01-01T00:00:00.000Z' },
+        }),
+      );
+    return new Response(
       JSON.stringify({
         success: false,
         message: 'INVALID_USAGE_EVENT',
         data: null,
       }),
       { status: 422 },
-    )) as typeof fetch;
+    );
+  }) as typeof fetch;
 
   try {
     await appendBuckets(dir, [liveBucket(hour)]);

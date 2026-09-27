@@ -1,33 +1,30 @@
 import { randomUUID } from 'node:crypto';
 
 import { aggregateForIngest } from '../aggregate.js';
-import {
-  resolveLinkedUserId,
-  setLastUploadAt,
-} from '../config.js';
+import { resolveLinkedUserId, setLastUploadAt } from '../config.js';
 import { appendJsonLog } from '../debug-log.js';
 import { uploadLogPath } from '../paths.js';
 import { dedupeBuckets, loadBucketsForRange } from '../queue/index.js';
 import { ingestBucketKey, monthFromHourStart } from '../queue/keys.js';
-import type { IngestBucket, QueueBucket, SyncStatus, TudConfig } from '../types.js';
+import type {
+  IngestBucket,
+  QueueBucket,
+  SyncStatus,
+  TudConfig,
+} from '../types.js';
 import {
-  BACKFILL_BATCH_LIMIT,
   BACKFILL_GAP_MS,
   applyBackfillFailure,
   applyIngestHold,
   earliestRetryMs,
   enqueueBackfillKeys,
-  hourStartFromIngestKey,
   productWindowSinceIso,
   pruneBackfillItems,
-  removeBackfillKeys,
   selectDrainBatch,
-  shouldCommitBackfillBatch,
-  splitLiveAndBackfill,
 } from './backfill.js';
 import { bucketToIngestEvent } from './events.js';
+import { confirmPostedEvents } from './confirmation.js';
 import {
-  clearUploadSlot,
   commitBucketHashes,
   findUploadDelta,
   getUploadSlot,
@@ -36,6 +33,8 @@ import {
   saveUploadStateFile,
   setUploadSlot,
   bucketHash,
+  withUploadLock,
+  type UploadStatus,
   type UploadSlotState,
   type UploadStateFileV2,
 } from './state.js';
@@ -78,29 +77,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const uploadLocks = new Map<string, Promise<unknown>>();
-
-async function withUploadLock<T>(dataDir: string, fn: () => Promise<T>): Promise<T> {
-  const prev = uploadLocks.get(dataDir) ?? Promise.resolve();
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  uploadLocks.set(
-    dataDir,
-    prev.then(
-      () => gate,
-      () => gate,
-    ),
-  );
-  await prev.catch(() => undefined);
-  try {
-    return await fn();
-  } finally {
-    release();
-  }
-}
-
 export async function postBatch(
   apiUrl: string,
   token: string,
@@ -118,6 +94,7 @@ export async function postBatch(
   for (let attempt = 0; attempt < 4; attempt++) {
     const res = await fetch(`${apiUrl}/v1/model-usage/reports`, {
       method: 'POST',
+      signal: AbortSignal.timeout(30_000),
       headers: {
         'x-user-id': token,
         Authorization: `Bearer ${token}`,
@@ -131,7 +108,9 @@ export async function postBatch(
     if (res.status === 429 && attempt < 3) {
       const retryAfter = Number(res.headers.get('Retry-After'));
       const waitMs =
-        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000;
+        Number.isFinite(retryAfter) && retryAfter > 0
+          ? retryAfter * 1000
+          : 2000;
       await sleep(waitMs);
       continue;
     }
@@ -142,7 +121,11 @@ export async function postBatch(
     let body: {
       success?: boolean;
       message?: string;
-      data?: { accepted_count?: number; duplicate_count?: number; report_id?: string };
+      data?: {
+        accepted_count?: number;
+        duplicate_count?: number;
+        report_id?: string;
+      };
     };
     try {
       body = JSON.parse(text) as typeof body;
@@ -150,13 +133,13 @@ export async function postBatch(
       throw new Error(`上报响应解析失败: ${text.slice(0, 200)}`);
     }
 
-    if (!body.success || !body.data) {
+    if (body.success !== true || !body.data) {
       throw new Error(body.message ?? `上报失败 ${res.status}`);
     }
 
     return {
-      accepted: body.data.accepted_count ?? 0,
-      duplicate: body.data.duplicate_count ?? 0,
+      accepted: body.data.accepted_count ?? Number.NaN,
+      duplicate: body.data.duplicate_count ?? Number.NaN,
       reportId: body.data.report_id ?? '',
     };
   }
@@ -179,6 +162,7 @@ export async function fetchRemoteUploadWatermark(
 
   try {
     const res = await fetch(url, {
+      signal: AbortSignal.timeout(30_000),
       headers: {
         'x-user-id': token,
         Authorization: `Bearer ${token}`,
@@ -192,7 +176,7 @@ export async function fetchRemoteUploadWatermark(
       success?: boolean;
       data?: SyncStatus & { ingestMinOccurredAt?: string | null };
     };
-    if (!body.success || !body.data) {
+    if (body.success !== true || !body.data) {
       return { ingestMinOccurredAt: null, dataThrough: null };
     }
     return {
@@ -260,281 +244,306 @@ async function persistSlot(
   return next;
 }
 
+/** Upgrade repair is enqueued even when a legacy hash already equals the full bucket. */
+export const UPLOAD_REPAIR_VERSION = 1;
+
+export function enqueueUploadSnapshots(
+  slot: UploadSlotState,
+  buckets: IngestBucket[],
+  since?: string,
+): UploadSlotState {
+  const next = enqueueBackfillKeys(
+    slot,
+    buckets.map(ingestBucketKey),
+    since,
+  ).slot;
+  const byKey = new Map(
+    buckets.map((bucket) => [ingestBucketKey(bucket), bucket]),
+  );
+  next.backfill!.items = next.backfill!.items.map((item) => {
+    const snapshot = byKey.get(item.key);
+    if (!snapshot) return item;
+    const changed =
+      item.snapshot && bucketHash(item.snapshot) !== bucketHash(snapshot);
+    return {
+      ...item,
+      snapshot: { ...snapshot },
+      ...(changed ? { attempts: 0, nextRetryAt: null } : {}),
+    };
+  });
+  return next;
+}
+
+/** Caller holds withUploadLock. Confirm only the sent value, preserving concurrently collected data. */
+export async function settleUploadSnapshots(
+  dataDir: string,
+  config: TudConfig,
+  snapshots: IngestBucket[],
+  confirmed: Set<string>,
+  error?: string,
+  nowMs = Date.now(),
+): Promise<number> {
+  const apiUrl = normalizeApiUrl(config.juejin.apiUrl!);
+  const deviceId = config.deviceId;
+  const file = await loadUploadStateFile(dataDir);
+  let slot = getUploadSlot(file, apiUrl, deviceId);
+  const current = new Map<string, IngestBucket>();
+  const months = [
+    ...new Set(
+      snapshots.map((bucket) => monthFromHourStart(bucket.hour_start)),
+    ),
+  ];
+  for (const bucket of aggregateForIngest(
+    await loadBucketsForRange(dataDir, new Date(0).toISOString(), months),
+  )) {
+    current.set(ingestBucketKey(bucket), bucket);
+  }
+  const confirmedBuckets = snapshots.filter((bucket) => {
+    const event = bucketToIngestEvent(bucket, deviceId);
+    return event && confirmed.has(event.event_id);
+  });
+  slot = commitBucketHashes(slot, confirmedBuckets);
+  const sent = new Map(
+    snapshots.map((bucket) => [ingestBucketKey(bucket), bucket]),
+  );
+  const confirmedKeys = new Set(confirmedBuckets.map(ingestBucketKey));
+  const items = (slot.backfill?.items ?? []).flatMap((item) => {
+    const snapshot = sent.get(item.key);
+    if (!snapshot) return [item];
+    const latest = current.get(item.key);
+    if (latest && bucketHash(latest) !== bucketHash(snapshot)) {
+      return [
+        { ...item, snapshot: { ...latest }, attempts: 0, nextRetryAt: null },
+      ];
+    }
+    if (item.snapshot && bucketHash(item.snapshot) !== bucketHash(snapshot))
+      return [item];
+    if (confirmedKeys.has(item.key)) return [];
+    return applyBackfillFailure([item], nowMs);
+  });
+  slot = {
+    ...slot,
+    backfill: { ...slot.backfill, items },
+    lastError:
+      error ??
+      (confirmedBuckets.length < snapshots.length
+        ? '云端尚未确认全部记录，等待重试'
+        : null),
+    ...(confirmedBuckets.length
+      ? { lastConfirmedAt: new Date(nowMs).toISOString() }
+      : {}),
+  };
+  await persistSlot(dataDir, file, apiUrl, deviceId, slot);
+  if (confirmedBuckets.length > 0) await setLastUploadAt(dataDir, config);
+  return confirmedBuckets.length;
+}
+
+interface PendingRound extends DrainRoundResult {
+  accepted: number;
+  duplicate: number;
+  requestCount: number;
+  error?: Error;
+}
+
+/** All lanes use the same durable tasks, floor checks, and confirmation rules. Caller holds the lock. */
+async function processPending(
+  dataDir: string,
+  config: TudConfig,
+  target: NonNullable<ReturnType<typeof uploadTarget>>,
+  nowMs: number,
+): Promise<PendingRound> {
+  const { apiUrl, token, deviceId } = target;
+  let file = await loadUploadStateFile(dataDir);
+  let slot = getUploadSlot(file, apiUrl, deviceId);
+  const productSince = productWindowSinceIso(nowMs);
+  const pruned = pruneBackfillItems(slot.backfill?.items ?? [], productSince);
+  slot = { ...slot, backfill: { ...slot.backfill, items: pruned.kept } };
+  const empty = {
+    idle: true,
+    waitMs: 0,
+    posted: 0,
+    held: 0,
+    accepted: 0,
+    duplicate: 0,
+    requestCount: 0,
+  };
+  if (pruned.kept.length === 0) {
+    slot.lastError = null;
+    await persistSlot(dataDir, file, apiUrl, deviceId, slot);
+    return empty;
+  }
+  const watermark = await fetchRemoteUploadWatermark(apiUrl, token, deviceId);
+  const selected = selectDrainBatch(pruned.kept, {
+    ingestMinIso: watermark.ingestMinOccurredAt,
+    productSinceIso: productSince,
+    nowMs,
+  });
+  const rows = aggregateForIngest(
+    await loadBucketsForRange(dataDir, productSince),
+  );
+  const byKey = new Map(
+    rows.map((bucket) => [ingestBucketKey(bucket), bucket]),
+  );
+  const snapshots = selected.send.flatMap((item) => {
+    const bucket = byKey.get(item.key) ?? item.snapshot;
+    return bucket ? [bucket] : [];
+  });
+  slot = enqueueUploadSnapshots(slot, snapshots);
+  const heldKeys = new Set(selected.hold.map((item) => item.key));
+  const missingKeys = new Set(
+    selected.send
+      .filter((item) => !byKey.has(item.key) && !item.snapshot)
+      .map((item) => item.key),
+  );
+  slot.backfill!.items = slot.backfill!.items.map((item) =>
+    heldKeys.has(item.key) || missingKeys.has(item.key)
+      ? applyIngestHold([item], nowMs)[0]!
+      : item,
+  );
+  const events = snapshots
+    .map((bucket) => bucketToIngestEvent(bucket, deviceId))
+    .filter((event) => event !== null);
+  if (snapshots.length > 0) slot.lastAttemptAt = new Date(nowMs).toISOString();
+  // This write must succeed before any remote mutation begins.
+  file = await persistSlot(dataDir, file, apiUrl, deviceId, slot);
+  if (events.length === 0) {
+    if (snapshots.length)
+      await settleUploadSnapshots(
+        dataDir,
+        config,
+        snapshots,
+        new Set(),
+        '存在无法上报的记录',
+        nowMs,
+      );
+    const retry = earliestRetryMs(slot.backfill!.items, nowMs);
+    return {
+      ...empty,
+      idle: false,
+      waitMs: Math.max(1_000, (retry ?? nowMs + 60_000) - nowMs),
+      held: heldKeys.size + missingKeys.size,
+    };
+  }
+  let accepted = 0;
+  let duplicate = 0;
+  let error: Error | undefined;
+  let confirmed = new Set<string>();
+  try {
+    const result = await postBatch(apiUrl, token, deviceId, events);
+    accepted = Number.isFinite(result.accepted) ? result.accepted : 0;
+    duplicate = Number.isFinite(result.duplicate) ? result.duplicate : 0;
+    confirmed = await confirmPostedEvents(target, events, result);
+  } catch (cause) {
+    error = cause instanceof Error ? cause : new Error(String(cause));
+  }
+  const posted = await settleUploadSnapshots(
+    dataDir,
+    config,
+    snapshots,
+    confirmed,
+    error?.message,
+    nowMs,
+  );
+  await appendJsonLog(uploadLogPath(dataDir), {
+    event: error
+      ? 'live_failed_enqueued_backfill'
+      : posted < events.length
+        ? 'backfill_retry'
+        : 'batch',
+    accepted,
+    duplicate,
+    posted,
+    pending: events.length - posted,
+    ...(error ? { error: error.message } : {}),
+  });
+  if (error) {
+    file = await loadUploadStateFile(dataDir);
+    slot = { ...getUploadSlot(file, apiUrl, deviceId), needsFullScan: true };
+    await persistSlot(dataDir, file, apiUrl, deviceId, slot);
+  }
+  return {
+    idle: false,
+    waitMs: BACKFILL_GAP_MS,
+    posted,
+    held: selected.hold.length,
+    accepted,
+    duplicate,
+    requestCount: 1,
+    error,
+  };
+}
+
 export async function uploadToServer(
   dataDir: string,
   config: TudConfig,
   options?: UploadOptions,
 ): Promise<UploadResult | null> {
-  const logPath = uploadLogPath(dataDir);
   const target = uploadTarget(config, options?.force);
-  if (!options?.force && !config.juejin.enabled) {
-    return null;
-  }
-  if (!target) {
-    const reason = !config.juejin.apiUrl?.trim()
-      ? 'missing_api_url'
-      : !config.deviceId?.trim()
-        ? 'missing_device_id'
-        : !resolveLinkedUserId(config.deviceId, config.juejin.token)
-          ? 'missing_linked_user'
-          : 'missing_token';
-    await appendJsonLog(logPath, { event: 'skip', reason });
-    return null;
-  }
-
-  const { apiUrl, token, deviceId } = target;
-  const nowMs = Date.now();
-  const loadSince = loadSinceIso(config, nowMs);
-
+  if (!target) return null;
   const result = await withUploadLock(dataDir, async () => {
-    let file = await loadUploadStateFile(dataDir);
-    if (options?.reconcile) {
-      file = clearUploadSlot(file, apiUrl, deviceId);
-      await appendJsonLog(logPath, {
-        event: 'reconcile',
-        reason: 'upload_slot_reset',
-        apiUrl,
-        deviceId,
-      });
-    }
-
-    let slot: UploadSlotState = getUploadSlot(file, apiUrl, deviceId);
-    let hasPriorUpload = Object.keys(slot.buckets).length > 0;
-
-    const watermark = await fetchRemoteUploadWatermark(apiUrl, token, deviceId);
-
-    if (hasPriorUpload && watermark.ingestMinOccurredAt && !watermark.dataThrough) {
-      file = clearUploadSlot(file, apiUrl, deviceId);
-      slot = getUploadSlot(file, apiUrl, deviceId);
-      hasPriorUpload = false;
-      await appendJsonLog(logPath, {
-        event: 'reconcile',
-        reason: 'remote_empty_for_device',
-        apiUrl,
-        deviceId,
-      });
-    }
-
-    const enqueuedSince = slot.backfill?.enqueuedSince ?? null;
-    const windowExpanded =
-      !enqueuedSince || Date.parse(loadSince) < Date.parse(enqueuedSince);
-    const forceFullScan = Boolean(options?.fullScan || slot.needsFullScan);
-
-    let useIncremental =
-      !forceFullScan &&
-      !windowExpanded &&
-      hasPriorUpload &&
+    const { apiUrl, deviceId } = target;
+    const file = await loadUploadStateFile(dataDir);
+    let slot = getUploadSlot(file, apiUrl, deviceId);
+    if (options?.reconcile)
+      slot = { ...slot, buckets: {}, needsFullScan: true };
+    const loadSince = loadSinceIso(config);
+    const watermark = await fetchRemoteUploadWatermark(
+      target.apiUrl,
+      target.token,
+      target.deviceId,
+    );
+    const remoteEmpty =
+      Object.keys(slot.buckets).length > 0 &&
+      Boolean(watermark.ingestMinOccurredAt) &&
+      !watermark.dataThrough;
+    const repair =
+      (slot.repairVersion ?? 0) < UPLOAD_REPAIR_VERSION || remoteEmpty;
+    const expanded =
+      !slot.backfill?.enqueuedSince ||
+      Date.parse(loadSince) < Date.parse(slot.backfill.enqueuedSince);
+    const incremental =
+      !repair &&
+      !expanded &&
+      !options?.fullScan &&
+      !slot.needsFullScan &&
       options?.recentBuckets !== undefined;
-
-    // Empty array means this sync wrote nothing — skip ingest entirely.
-    // (undefined recentBuckets still means "caller doesn't know", so full scan.)
-    // Pending backfill is still drained after the lock (see kickBackfillDrain).
-    if (useIncremental && options!.recentBuckets!.length === 0) {
-      const pendingBackfill = slot.backfill?.items.length ?? 0;
-      await appendJsonLog(logPath, {
-        event: 'skip',
-        reason: 'no_recent_buckets',
-        totalBuckets: 0,
-        pendingBackfill,
-      });
-      return {
-        uploaded: 0,
-        accepted: 0,
-        duplicate: 0,
-        skipped: 0,
-        requestCount: 0,
-        backfillEnqueued: 0,
-      };
-    }
-
-    const loaded = useIncremental
+    const loaded = incremental
       ? await loadTouchedIngestBuckets(dataDir, options!.recentBuckets!)
       : aggregateForIngest(await loadBucketsForRange(dataDir, loadSince));
-
-    const delta = findUploadDelta(loaded, slot);
-    const { live, backfill } = splitLiveAndBackfill(delta, slot, nowMs);
-    const pendingKeys = new Set(
-      (slot.backfill?.items ?? []).map((item) => item.key),
+    const delta = repair ? loaded : findUploadDelta(loaded, slot);
+    const before = slot.backfill?.items.length ?? 0;
+    slot = enqueueUploadSnapshots(
+      slot,
+      delta,
+      incremental ? undefined : loadSince,
     );
-    const liveNow = live.filter((bucket) => !pendingKeys.has(ingestBucketKey(bucket)));
-
-    let enqueued = 0;
-    if (backfill.length > 0 || windowExpanded) {
-      const queued = enqueueBackfillKeys(
-        slot,
-        backfill.map((bucket) => ingestBucketKey(bucket)),
-        useIncremental ? enqueuedSince : loadSince,
-      );
-      slot = queued.slot;
-      enqueued = queued.added;
-      file = await persistSlot(dataDir, file, apiUrl, deviceId, slot);
-      if (enqueued > 0) {
-        await appendJsonLog(logPath, {
-          event: 'backfill_enqueue',
-          added: enqueued,
-          total: slot.backfill?.items.length ?? 0,
-          loadSince,
-        });
-      }
-    }
-
-    if (liveNow.length === 0 && enqueued === 0) {
-      if (slot.needsFullScan && forceFullScan) {
-        slot = { ...slot, needsFullScan: false };
-        file = await persistSlot(dataDir, file, apiUrl, deviceId, slot);
-      }
-      await appendJsonLog(logPath, {
-        event: 'skip',
-        reason: 'no_delta',
-        totalBuckets: loaded.length,
-        mode: useIncremental ? 'incremental' : 'full',
-        loadSince,
-      });
-      return {
-        uploaded: 0,
-        accepted: 0,
-        duplicate: 0,
-        skipped: 0,
-        requestCount: 0,
-        backfillEnqueued: 0,
-      };
-    }
-
-    const events = liveNow
-      .map((bucket) => bucketToIngestEvent(bucket, deviceId))
-      .filter((ev): ev is NonNullable<typeof ev> => ev !== null);
-    const skipped = liveNow.length - events.length;
-    let acceptedTotal = 0;
-    let duplicateTotal = 0;
-    let requestCount = 0;
-    let committedLive: IngestBucket[] = [];
-
-    if (liveNow.length > 0) {
-      await appendJsonLog(logPath, {
-        event: 'start',
-        mode: useIncremental ? 'incremental' : 'full',
-        lane: 'live',
-        deltaBuckets: liveNow.length,
-        events: events.length,
-        skipped,
-        loadSince,
-        forceFullScan,
-      });
-
-      const enqueueFailedLive = async (reason: string) => {
-        const remaining = liveNow.filter(
-          (bucket) => slot.buckets[ingestBucketKey(bucket)] !== bucketHash(bucket),
-        );
-        if (remaining.length === 0) return;
-        const queued = enqueueBackfillKeys(
-          slot,
-          remaining.map((bucket) => ingestBucketKey(bucket)),
-          loadSince,
-        );
-        slot = { ...queued.slot, needsFullScan: true };
-        enqueued += queued.added;
-        file = await persistSlot(dataDir, file, apiUrl, deviceId, slot);
-        await appendJsonLog(logPath, {
-          event: 'live_failed_enqueued_backfill',
-          reason,
-          added: queued.added,
-          remaining: remaining.length,
-          total: slot.backfill?.items.length ?? 0,
-        });
-      };
-
-      try {
-        for (let i = 0; i < liveNow.length; i += BACKFILL_BATCH_LIMIT) {
-          const batchBuckets = liveNow.slice(i, i + BACKFILL_BATCH_LIMIT);
-          const batch = batchBuckets
-            .map((bucket) => bucketToIngestEvent(bucket, deviceId))
-            .filter((ev): ev is NonNullable<typeof ev> => ev !== null);
-          if (batch.length === 0) continue;
-          const result = await postBatch(apiUrl, token, deviceId, batch);
-          requestCount += 1;
-          acceptedTotal += result.accepted;
-          duplicateTotal += result.duplicate;
-          await appendJsonLog(logPath, {
-            event: 'batch',
-            lane: 'live',
-            batchIndex: Math.floor(i / BACKFILL_BATCH_LIMIT) + 1,
-            batchSize: batch.length,
-            accepted: result.accepted,
-            duplicate: result.duplicate,
-            reportId: result.reportId,
-          });
-          slot = commitBucketHashes(slot, batchBuckets);
-          slot = {
-            ...slot,
-            backfill: {
-              items: removeBackfillKeys(
-                slot.backfill?.items ?? [],
-                batchBuckets.map((bucket) => ingestBucketKey(bucket)),
-              ),
-              enqueuedSince: slot.backfill?.enqueuedSince ?? null,
-            },
-          };
-          committedLive = committedLive.concat(batchBuckets);
-          file = await persistSlot(dataDir, file, apiUrl, deviceId, slot);
-        }
-      } catch (err) {
-        await appendJsonLog(logPath, {
-          event: 'error',
-          lane: 'live',
-          error: err instanceof Error ? err.message : String(err),
-          committed: committedLive.length,
-        });
-        await enqueueFailedLive('post_error');
-        throw err;
-      }
-
-      if (
-        requestCount > 0 &&
-        acceptedTotal === 0 &&
-        duplicateTotal === 0
-      ) {
-        await appendJsonLog(logPath, {
-          event: 'error',
-          error: 'server rejected all events (accepted=0)',
-          uploaded: committedLive.length,
-          duplicate: duplicateTotal,
-        });
-        await enqueueFailedLive('accepted_zero');
-        throw new Error(
-          `上报未生效：${committedLive.length || liveNow.length} 条事件均被 Server 忽略（accepted=0）。` +
-            '请确认 Server 已更新，或运行 jusage upload --force --reconcile 重新对齐。',
-        );
-      }
-
-      if (slot.needsFullScan && forceFullScan) {
-        slot = { ...slot, needsFullScan: false };
-        file = await persistSlot(dataDir, file, apiUrl, deviceId, slot);
-      }
-      if (committedLive.length > 0) {
-        await setLastUploadAt(dataDir, config);
-      }
-    }
-
-    await appendJsonLog(logPath, {
-      event: 'done',
-      lane: 'live',
-      uploaded: committedLive.length,
-      accepted: acceptedTotal,
-      duplicate: duplicateTotal,
-      backfillEnqueued: enqueued,
+    slot.repairVersion = UPLOAD_REPAIR_VERSION;
+    slot.needsFullScan = false;
+    await persistSlot(dataDir, file, apiUrl, deviceId, slot);
+    await appendJsonLog(uploadLogPath(dataDir), {
+      event: 'start',
+      mode: incremental ? 'incremental' : 'full',
+      repair,
+      ...(options?.recentBuckets?.length === 0 && !delta.length
+        ? { reason: 'no_recent_buckets' }
+        : {}),
     });
-
+    const round = await processPending(dataDir, config, target, Date.now());
+    if (round.error) throw round.error;
     return {
-      uploaded: committedLive.length,
-      accepted: acceptedTotal,
-      duplicate: duplicateTotal,
-      skipped,
-      requestCount,
-      backfillEnqueued: enqueued,
+      uploaded: round.posted,
+      accepted: round.accepted,
+      duplicate: round.duplicate,
+      skipped: 0,
+      requestCount: round.requestCount,
+      backfillEnqueued: Math.max(0, slot.backfill!.items.length - before),
     };
   });
-
-  if (!options?.skipDrain) kickBackfillDrain(dataDir, () => config);
+  if (
+    !options?.skipDrain &&
+    (await getUploadStatus(dataDir, config)).pendingBuckets > 0
+  )
+    kickBackfillDrain(dataDir, () => config);
   return result;
 }
 
@@ -548,197 +557,53 @@ export interface DrainRoundResult {
 export async function drainBackfillRound(
   dataDir: string,
   config: TudConfig,
-  opts?: { nowMs?: number },
+  opts?: { nowMs?: number; force?: boolean },
 ): Promise<DrainRoundResult> {
-  const logPath = uploadLogPath(dataDir);
-  const target = uploadTarget(config, false);
-  if (!target) {
-    return { idle: true, waitMs: 0, posted: 0, held: 0 };
-  }
-  const { apiUrl, token, deviceId } = target;
-  const nowMs = opts?.nowMs ?? Date.now();
-  const productSince = productWindowSinceIso(nowMs);
+  const target = uploadTarget(config, opts?.force);
+  if (!target) return { idle: true, waitMs: 0, posted: 0, held: 0 };
+  return withUploadLock(dataDir, () =>
+    processPending(dataDir, config, target, opts?.nowMs ?? Date.now()),
+  );
+}
 
-  const prepared = await withUploadLock(dataDir, async () => {
-    const file = await loadUploadStateFile(dataDir);
-    const slot = getUploadSlot(file, apiUrl, deviceId);
-    const pruned = pruneBackfillItems(slot.backfill?.items ?? [], productSince);
-    if (pruned.kept.length === 0) {
-      if (pruned.dropped > 0) {
-        await persistSlot(dataDir, file, apiUrl, deviceId, {
-          buckets: slot.buckets,
-          backfill: {
-            items: [],
-            enqueuedSince: slot.backfill?.enqueuedSince ?? null,
-          },
-        });
-      }
-      return {
-        send: [] as typeof pruned.kept,
-        held: 0,
-        remaining: 0,
-        ingestMin: null as string | null,
-        usedFallback: false,
-      };
-    }
-    const watermark = await fetchRemoteUploadWatermark(apiUrl, token, deviceId);
-    const usedFallback = !watermark.ingestMinOccurredAt;
-    const ingestMinIso = watermark.ingestMinOccurredAt ?? productSince;
-    if (usedFallback) {
-      await appendJsonLog(logPath, {
-        event: 'watermark_fallback',
-        lane: 'backfill',
-        reason: 'ingestMin_missing',
-        ingestMin: ingestMinIso,
-      });
-    }
-    const selected = selectDrainBatch(pruned.kept, {
-      ingestMinIso,
-      productSinceIso: productSince,
-      nowMs,
-    });
-
-    const items = [
-      ...selected.send,
-      ...applyIngestHold(selected.hold, nowMs),
-      ...selected.rest,
-    ].sort((a, b) => {
-      const ah = hourStartFromIngestKey(a.key) ?? a.key;
-      const bh = hourStartFromIngestKey(b.key) ?? b.key;
-      return ah.localeCompare(bh);
-    });
-
-    const nextSlot: UploadSlotState = {
-      buckets: slot.buckets,
-      backfill: {
-        items,
-        enqueuedSince: slot.backfill?.enqueuedSince ?? null,
-      },
-    };
-    await persistSlot(dataDir, file, apiUrl, deviceId, nextSlot);
-
-    return {
-      send: selected.send,
-      held: selected.hold.length,
-      remaining: items.length,
-      ingestMin: ingestMinIso,
-      usedFallback,
-    };
-  });
-
-  if (prepared.send.length === 0) {
-    if (prepared.remaining === 0) {
-      return { idle: true, waitMs: 0, posted: 0, held: prepared.held };
-    }
-    await appendJsonLog(logPath, {
-      event: 'backfill_hold',
-      lane: 'backfill',
-      reason: prepared.ingestMin ? 'below_ingestMin_or_retry' : 'ingestMin_missing',
-      held: prepared.held,
-      remaining: prepared.remaining,
-      ingestMin: prepared.ingestMin,
-    });
-    const file = await loadUploadStateFile(dataDir);
-    const slot = getUploadSlot(file, apiUrl, deviceId);
-    const waitFrom = earliestRetryMs(slot.backfill?.items ?? [], nowMs);
-    const waitMs = waitFrom != null ? Math.max(1_000, waitFrom - nowMs) : BACKFILL_GAP_MS;
-    return { idle: false, waitMs, posted: 0, held: prepared.held };
-  }
-
-  const hydrateSince =
-    hourStartFromIngestKey(prepared.send[0]!.key) ?? productSince;
-  const rows = aggregateForIngest(await loadBucketsForRange(dataDir, hydrateSince));
-  const byKey = new Map(rows.map((bucket) => [ingestBucketKey(bucket), bucket]));
-  const toSend: IngestBucket[] = [];
-  const missing: string[] = [];
-  for (const item of prepared.send) {
-    const bucket = byKey.get(item.key);
-    if (bucket) toSend.push(bucket);
-    else missing.push(item.key);
-  }
-
-  const events = toSend
-    .map((bucket) => bucketToIngestEvent(bucket, deviceId))
-    .filter((ev): ev is NonNullable<typeof ev> => ev !== null);
-
-  await appendJsonLog(logPath, {
-    event: 'start',
-    lane: 'backfill',
-    events: events.length,
-    missing: missing.length,
-    ingestMin: prepared.ingestMin,
-  });
-
-  let accepted = 0;
-  let duplicate = 0;
-  let failed = false;
-  if (events.length > 0) {
-    try {
-      const posted = await postBatch(apiUrl, token, deviceId, events);
-      accepted = posted.accepted;
-      duplicate = posted.duplicate;
-      failed = !shouldCommitBackfillBatch({
-        accepted,
-        duplicate,
-        ingestMinIso: prepared.ingestMin,
-        eventHourStarts: events.map((ev) => ev.occurred_at),
-      });
-      // sync-status 失败时用本地 90d 窗发送；全是 duplicate 不能当成功，
-      // 否则 15d 软丢弃会再次把 hash 误标成已上报。
-      if (prepared.usedFallback && accepted === 0) failed = true;
-    } catch (err) {
-      failed = true;
-      await appendJsonLog(logPath, {
-        event: 'error',
-        lane: 'backfill',
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  } else if (toSend.length > 0) {
-    failed = true;
-  }
-
-  await withUploadLock(dataDir, async () => {
-    const file = await loadUploadStateFile(dataDir);
-    let slot = getUploadSlot(file, apiUrl, deviceId);
-    let items = slot.backfill?.items ?? [];
-    items = removeBackfillKeys(items, missing);
-    const sentKeys = toSend.map((bucket) => ingestBucketKey(bucket));
-    if (failed) {
-      const failedItems = items.filter((item) => sentKeys.includes(item.key));
-      const others = items.filter((item) => !sentKeys.includes(item.key));
-      items = [...others, ...applyBackfillFailure(failedItems, nowMs)];
-    } else {
-      items = removeBackfillKeys(items, sentKeys);
-      slot = commitBucketHashes(slot, toSend);
-      await setLastUploadAt(dataDir, config);
-    }
-    slot = {
-      ...slot,
-      backfill: {
-        items,
-        enqueuedSince: slot.backfill?.enqueuedSince ?? null,
-      },
-    };
-    await persistSlot(dataDir, file, apiUrl, deviceId, slot);
-  });
-
-  await appendJsonLog(logPath, {
-    event: failed ? 'backfill_retry' : 'batch',
-    lane: 'backfill',
-    accepted,
-    duplicate,
-    posted: events.length,
-    ingestMin: prepared.ingestMin,
-    reason: failed && accepted === 0 && duplicate > 0 ? 'floor_duplicate' : undefined,
-  });
-
-  return {
-    idle: false,
-    waitMs: BACKFILL_GAP_MS,
-    posted: failed ? 0 : events.length,
-    held: prepared.held,
+export async function getUploadStatus(
+  dataDir: string,
+  config: TudConfig,
+): Promise<UploadStatus> {
+  const blank = {
+    pendingBuckets: 0,
+    lastAttemptAt: null,
+    lastConfirmedAt: null,
   };
+  if (!config.juejin.enabled) return { ...blank, state: 'disabled' };
+  const target = uploadTarget(config);
+  if (!target)
+    return { ...blank, state: 'failed', message: '云端同步未关联或缺少凭据' };
+  try {
+    const slot = getUploadSlot(
+      await loadUploadStateFile(dataDir),
+      target.apiUrl,
+      target.deviceId,
+    );
+    const pendingBuckets = slot.backfill?.items.length ?? 0;
+    return {
+      state: slot.lastError
+        ? 'failed'
+        : pendingBuckets > 0 || !slot.lastConfirmedAt
+          ? 'pending'
+          : 'confirmed',
+      pendingBuckets,
+      lastAttemptAt: slot.lastAttemptAt ?? null,
+      lastConfirmedAt: slot.lastConfirmedAt ?? null,
+      ...(slot.lastError
+        ? { message: slot.lastError }
+        : pendingBuckets
+          ? { message: '等待云端接收、窗口开放或重试' }
+          : {}),
+    };
+  } catch {
+    return { ...blank, state: 'failed', message: '上传状态读取失败' };
+  }
 }
 
 interface DrainHandle {
@@ -776,12 +641,19 @@ export function kickBackfillDrain(
     loop: null,
   };
   drainHandle = handle;
-  handle.loop = runDrainLoop(handle).finally(() => {
-    if (drainHandle === handle) {
-      handle.loop = null;
-      handle.running = false;
-    }
-  });
+  handle.loop = runDrainLoop(handle)
+    .catch((error) => {
+      console.warn(
+        '云端补传暂停:',
+        error instanceof Error ? error.message : error,
+      );
+    })
+    .finally(() => {
+      if (drainHandle === handle) {
+        handle.loop = null;
+        handle.running = false;
+      }
+    });
 }
 
 export function stopBackfillDrain(): void {
@@ -794,11 +666,14 @@ export function stopBackfillDrain(): void {
 export async function drainBackfillUntilIdle(
   dataDir: string,
   config: TudConfig,
-  opts?: { maxRounds?: number; nowMs?: number },
+  opts?: { maxRounds?: number; nowMs?: number; force?: boolean },
 ): Promise<void> {
   const maxRounds = opts?.maxRounds ?? 10_000;
   for (let i = 0; i < maxRounds; i += 1) {
-    const result = await drainBackfillRound(dataDir, config, { nowMs: opts?.nowMs });
+    const result = await drainBackfillRound(dataDir, config, {
+      nowMs: opts?.nowMs,
+      force: opts?.force,
+    });
     if (result.idle) return;
     if (result.posted === 0 && result.waitMs > BACKFILL_GAP_MS) return;
     if (result.waitMs > 0) await sleep(result.waitMs);

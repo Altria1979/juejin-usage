@@ -11,14 +11,20 @@ import {
 import type { TudConfig } from '../types.js';
 import { bucketToIngestEvent, type IngestEventPayload } from './events.js';
 import {
-  commitBucketHashes,
   getUploadSlot,
   loadUploadStateFile,
   normalizeApiUrl,
   saveUploadStateFile,
   setUploadSlot,
+  withUploadLock,
 } from './state.js';
-import { productWindowSinceIso } from './backfill.js';
+import { productWindowSinceIso, parseIngestMinMs } from './backfill.js';
+import { confirmPostedEvents, readRemoteEvents } from './confirmation.js';
+import {
+  enqueueUploadSnapshots,
+  fetchRemoteUploadWatermark,
+  settleUploadSnapshots,
+} from './client.js';
 
 /** Same rolling 90d floor as online ingest / dashboard max range. */
 export function calibrateWindowSinceIso(nowMs = Date.now()): string {
@@ -29,10 +35,7 @@ const CLIENT_VERSION = 'jusage-1.0.0';
 const MAX_EVENTS_PER_RECONCILE = 500;
 const SHANGHAI_OFFSET = '+08:00';
 
-export type CalibrateRowKind =
-  | 'online_missing'
-  | 'online_only'
-  | 'mismatch';
+export type CalibrateRowKind = 'online_missing' | 'online_only' | 'mismatch';
 
 export type DayDiffKind = CalibrateRowKind;
 
@@ -262,7 +265,9 @@ export function diffCalibrateRows(
       local &&
       remote &&
       (!usageEqual(local.usage, remote.usage) ||
-        !reportedCostEqual(local.reported_cost_usd, remote.reported_cost_usd))
+        !reportedCostEqual(local.reported_cost_usd, remote.reported_cost_usd) ||
+        Math.max(1, local.conversations_count ?? 1) !==
+          Math.max(1, remote.conversations_count ?? 1))
     ) {
       const localCost = local.reported_cost_usd;
       const remoteCost = remote.reported_cost_usd;
@@ -447,55 +452,19 @@ export async function fetchAllDeviceEvents(
   from: string;
   to: string;
 }> {
-  const events: CalibrateEventRow[] = [];
-  let cursor: string | null = null;
-  let ingestMinOccurredAt: string | null = null;
-  let resolvedFrom = from;
-  let resolvedTo = to;
-
-  for (;;) {
-    const url = new URL(
-      `${normalizeApiUrl(apiUrl)}/functions/tud-usage-device-events`,
-    );
-    url.searchParams.set('deviceId', deviceId);
-    url.searchParams.set('from', from);
-    url.searchParams.set('to', to);
-    url.searchParams.set('limit', String(MAX_EVENTS_PER_RECONCILE));
-    if (cursor) url.searchParams.set('cursor', cursor);
-
-    const res = await fetch(url, { headers: authHeaders(token) });
-    if (!res.ok) {
-      throw new Error(`tud-usage-device-events failed: HTTP ${res.status}`);
-    }
-    const body = (await res.json()) as {
-      success?: boolean;
-      data?: {
-        events?: CalibrateEventRow[];
-        next_cursor?: string | null;
-        ingest_min_occurred_at?: string | null;
-        from?: string;
-        to?: string;
-      };
-      message?: string;
-    };
-    if (!body.success || !body.data) {
-      throw new Error(body.message || 'tud-usage-device-events failed');
-    }
-    ingestMinOccurredAt = body.data.ingest_min_occurred_at ?? ingestMinOccurredAt;
-    resolvedFrom = body.data.from ?? resolvedFrom;
-    resolvedTo = body.data.to ?? resolvedTo;
-    for (const event of body.data.events ?? []) {
-      events.push({
-        ...event,
-        reported_cost_usd: normalizeReportedCost(event.reported_cost_usd),
-        conversations_count: Math.max(1, event.conversations_count ?? 1),
-      });
-    }
-    cursor = body.data.next_cursor ?? null;
-    if (!cursor) break;
-  }
-
-  return { events, ingestMinOccurredAt, from: resolvedFrom, to: resolvedTo };
+  const result = await readRemoteEvents(apiUrl, token, deviceId, from, to);
+  if (!result.complete)
+    throw new Error('云端记录读取不完整，已暂停校准；请缩小时间范围后重试');
+  return {
+    events: result.events.map((event) => ({
+      ...event,
+      reported_cost_usd: normalizeReportedCost(event.reported_cost_usd),
+      conversations_count: Math.max(1, event.conversations_count ?? 1),
+    })),
+    ingestMinOccurredAt: result.ingestMinOccurredAt,
+    from,
+    to,
+  };
 }
 
 export async function loadLocalCalibrateEvents(
@@ -626,6 +595,7 @@ export async function postReconcileBatch(
     `${normalizeApiUrl(apiUrl)}/v1/model-usage/reconcile`,
     {
       method: 'POST',
+      signal: AbortSignal.timeout(30_000),
       headers: {
         ...authHeaders(token),
         'Content-Type': 'application/json',
@@ -668,55 +638,119 @@ export async function applyCalibrateSelectedDates(
   if (!target) {
     throw new Error('云端同步未关联或缺少 apiUrl / token / deviceId');
   }
-  const sinceIso = calibrateWindowSinceIso();
-  const localRows = await loadLocalCalibrateEvents(
-    dataDir,
-    config,
-    target.deviceId,
-    sinceIso,
-  );
-  const batches = buildReconcileBatches({
-    deviceId: target.deviceId,
-    selectedDates,
-    localRows,
-  });
-
-  let deleted = 0;
-  let upserted = 0;
-  let floored = 0;
-  for (const batch of batches) {
-    let result: ReconcileBatchResult;
-    try {
-      result = await postReconcileBatch(target.apiUrl, target.token, batch);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      const date = localDateAndHour(batch.from, DEFAULT_STATS_TIMEZONE).date;
-      throw new Error(
-        `${date} 校准失败（本地 ${batch.events.length} 条事件，窗口 ${batch.from} ~ ${batch.to}）：${reason}`,
-        { cause: error },
+  return withUploadLock(dataDir, async () => {
+    const sinceIso = calibrateWindowSinceIso();
+    const selectedSet = new Set(selectedDates);
+    // Keep this exact snapshot throughout the request. A later queue read is only
+    // allowed to enqueue newer values, never to mark unsent values confirmed.
+    const snapshots = aggregateForIngest(
+      await loadBucketsForRange(dataDir, sinceIso),
+    ).filter((bucket) =>
+      selectedSet.has(
+        localDateAndHour(bucket.hour_start, DEFAULT_STATS_TIMEZONE).date,
+      ),
+    );
+    const localRows = snapshots
+      .map((bucket) => bucketToIngestEvent(bucket, target.deviceId))
+      .filter((event): event is IngestEventPayload => event !== null)
+      .map(toCalibrateRow);
+    const batches = buildReconcileBatches({
+      deviceId: target.deviceId,
+      selectedDates,
+      localRows,
+    });
+    let deleted = 0;
+    let upserted = 0;
+    let floored = 0;
+    for (const batch of batches) {
+      const daySnapshots = snapshots.filter(
+        (bucket) =>
+          bucket.hour_start >= batch.from && bucket.hour_start < batch.to,
       );
+      let file = await loadUploadStateFile(dataDir);
+      let slot = enqueueUploadSnapshots(
+        getUploadSlot(file, target.apiUrl, target.deviceId),
+        daySnapshots,
+      );
+      slot.lastAttemptAt = new Date().toISOString();
+      await saveUploadStateFile(
+        dataDir,
+        setUploadSlot(file, target.apiUrl, target.deviceId, slot),
+      );
+      try {
+        // Deletion-capable calibration requires a complete inventory and a known floor.
+        const remote = await fetchAllDeviceEvents(
+          target.apiUrl,
+          target.token,
+          target.deviceId,
+          batch.from,
+          batch.to,
+        );
+        const watermark = await fetchRemoteUploadWatermark(
+          target.apiUrl,
+          target.token,
+          target.deviceId,
+        );
+        const floor = parseIngestMinMs(
+          watermark.ingestMinOccurredAt ?? remote.ingestMinOccurredAt,
+        );
+        if (floor == null || Date.parse(batch.from) < floor)
+          throw new Error('所选日期不在已确认的云端接收窗口内，保留待处理记录');
+        const result = await postReconcileBatch(
+          target.apiUrl,
+          target.token,
+          batch,
+        );
+        const valid = [
+          result.deleted_count,
+          result.upserted_count,
+          result.floored_count,
+        ].every((count) => Number.isSafeInteger(count) && count >= 0);
+        const confirmed = await confirmPostedEvents(target, batch.events, {
+          accepted:
+            valid && result.floored_count === 0
+              ? result.upserted_count
+              : Number.NaN,
+          duplicate: 0,
+        });
+        await settleUploadSnapshots(dataDir, config, daySnapshots, confirmed);
+        if (
+          !valid ||
+          result.floored_count > 0 ||
+          confirmed.size !== batch.events.length
+        )
+          throw new Error('云端未确认全部校准记录，已保留重试任务');
+        deleted += result.deleted_count;
+        upserted += result.upserted_count;
+        floored += result.floored_count;
+        // For an explicitly empty local day, require a complete empty readback.
+        if (batch.events.length === 0) {
+          const after = await fetchAllDeviceEvents(
+            target.apiUrl,
+            target.token,
+            target.deviceId,
+            batch.from,
+            batch.to,
+          );
+          if (after.events.length > 0)
+            throw new Error('云端仍有记录，校准结果未确认');
+        }
+      } catch (error) {
+        file = await loadUploadStateFile(dataDir);
+        slot = getUploadSlot(file, target.apiUrl, target.deviceId);
+        slot.lastError = '校准未完成，待确认记录已保留';
+        await saveUploadStateFile(
+          dataDir,
+          setUploadSlot(file, target.apiUrl, target.deviceId, slot),
+        );
+        const reason = error instanceof Error ? error.message : String(error);
+        const date = localDateAndHour(batch.from, DEFAULT_STATS_TIMEZONE).date;
+        throw new Error(
+          `${date} 校准失败（本地 ${batch.events.length} 条事件，窗口 ${batch.from} ~ ${batch.to}）：${reason}`,
+          { cause: error },
+        );
+      }
     }
-    deleted += result.deleted_count;
-    upserted += result.upserted_count;
-    floored += result.floored_count;
-  }
-
-  const selectedSet = new Set(selectedDates);
-  const buckets = aggregateForIngest(
-    await loadBucketsForRange(dataDir, sinceIso),
-  ).filter((bucket) => {
-    const date = localDateAndHour(bucket.hour_start, DEFAULT_STATS_TIMEZONE)
-      .date;
-    return selectedSet.has(date);
+    return { batches: batches.length, deleted, upserted, floored };
   });
-  const file = await loadUploadStateFile(dataDir);
-  const slot = getUploadSlot(file, target.apiUrl, target.deviceId);
-  const nextSlot = commitBucketHashes(slot, buckets);
-  nextSlot.needsFullScan = false;
-  await saveUploadStateFile(
-    dataDir,
-    setUploadSlot(file, target.apiUrl, target.deviceId, nextSlot),
-  );
-
-  return { batches: batches.length, deleted, upserted, floored };
 }

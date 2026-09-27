@@ -113,6 +113,7 @@ test('incremental upload sends the whole bucket, not only the projects this sync
         DEVICE_ID,
         {
           ...commitBucketHashes({ buckets: {} }, aggregateForIngest([alpha, beta])),
+          repairVersion: 1,
           backfill: { items: [], enqueuedSince: '2026-01-01T00:00:00.000Z' },
         },
       ),

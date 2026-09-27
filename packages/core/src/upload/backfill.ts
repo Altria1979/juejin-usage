@@ -7,7 +7,9 @@ import type { BackfillItem, UploadSlotState } from './state.js';
 export const BACKFILL_BATCH_LIMIT = 500;
 export const BACKFILL_GAP_MS = 3_000;
 export const LIVE_LOOKBACK_MS = 48 * 60 * 60 * 1000;
-export const BACKFILL_RETRY_LADDER_MS = [30_000, 60_000, 120_000, 300_000] as const;
+export const BACKFILL_RETRY_LADDER_MS = [
+  30_000, 60_000, 120_000, 300_000,
+] as const;
 export const BACKFILL_HOLD_MS = 60_000;
 
 export function hourStartFromIngestKey(key: string): string | null {
@@ -83,6 +85,7 @@ export function enqueueBackfillKeys(
   });
   return {
     slot: {
+      ...slot,
       buckets: { ...slot.buckets },
       backfill: {
         items,
@@ -127,24 +130,28 @@ export interface DrainSelection {
 }
 
 /** Valid ingest floor timestamp, or null when watermark is missing/unusable. */
-export function parseIngestMinMs(ingestMinIso: string | null | undefined): number | null {
+export function parseIngestMinMs(
+  ingestMinIso: string | null | undefined,
+): number | null {
   if (!ingestMinIso) return null;
   const ms = Date.parse(ingestMinIso);
   return Number.isFinite(ms) ? ms : null;
 }
 
-/**
- * Backfill may commit hashes / drop queue items only when the server floor is
- * known and every posted event is on or after that floor. All-duplicate with an
- * unknown floor is the 15d ingest reject, not idempotent success.
- */
+/** A direct acknowledgement must accept every event; duplicates need readback. */
 export function shouldCommitBackfillBatch(input: {
   accepted: number;
   duplicate: number;
   ingestMinIso: string | null | undefined;
   eventHourStarts: Array<string | null | undefined>;
 }): boolean {
-  if (input.accepted === 0 && input.duplicate === 0) return false;
+  if (
+    !Number.isSafeInteger(input.accepted) ||
+    input.accepted <= 0 ||
+    input.accepted !== input.eventHourStarts.length ||
+    input.duplicate !== 0
+  )
+    return false;
   const ingestMinMs = parseIngestMinMs(input.ingestMinIso);
   if (ingestMinMs == null) return false;
   for (const hour of input.eventHourStarts) {
@@ -213,9 +220,12 @@ export function applyBackfillFailure(
   return items.map((item) => {
     const attempts = item.attempts + 1;
     return {
+      ...item,
       key: item.key,
       attempts,
-      nextRetryAt: new Date(nowMs + backfillRetryDelayMs(attempts)).toISOString(),
+      nextRetryAt: new Date(
+        nowMs + backfillRetryDelayMs(attempts),
+      ).toISOString(),
     };
   });
 }
@@ -228,7 +238,10 @@ export function removeBackfillKeys(
   return items.filter((item) => !drop.has(item.key));
 }
 
-export function earliestRetryMs(items: BackfillItem[], nowMs = Date.now()): number | null {
+export function earliestRetryMs(
+  items: BackfillItem[],
+  nowMs = Date.now(),
+): number | null {
   let best: number | null = null;
   for (const item of items) {
     const ms = item.nextRetryAt ? Date.parse(item.nextRetryAt) : nowMs;
