@@ -148,7 +148,9 @@ async function recoverUnlocked(dataDir: string): Promise<void> {
 export async function withCodexLedgerLock<T>(dataDir: string, operation: () => Promise<T>): Promise<T> {
   await mkdir(dataDir, { recursive: true });
   const release = await lock(join(dataDir, STATE_FILE), {
-    realpath: false, stale: 10_000, update: 5_000,
+    // Ledger SQLite reads can block this process synchronously for 60 seconds.
+    // Keep ownership while its heartbeat cannot run.
+    realpath: false, stale: 120_000, update: 5_000,
     retries: { retries: 100, factor: 1.2, minTimeout: 10, maxTimeout: 200 },
   });
   try { await recoverUnlocked(dataDir); return await operation(); }
