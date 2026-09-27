@@ -33,7 +33,7 @@ const mutations: Array<[string, (data: UsageDataset) => void]> = [
   ['daily project model attribution', (data) => { data.dailyRows[0]!.projects![0]!.modelBreakdown![0]!.costBreakdown = emptyCostBreakdown(); }],
   ['range model fee', (data) => { data.modelRows[0]!.costUsd = .5; }],
   ['range project attribution', (data) => { data.projectRows[0]!.costBreakdown = emptyCostBreakdown(); }],
-  ['range project model completeness', (data) => { data.projectRows[0]!.models[0]!.localMetrics = emptyLocalMetrics(); }],
+  ['range project model completeness', (data) => { data.projectRows[0]!.models![0]!.localMetrics = emptyLocalMetrics(); }],
 ];
 
 for (const [name, fingerprint] of [
