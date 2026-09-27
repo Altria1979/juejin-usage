@@ -253,8 +253,9 @@ test('aggregateHourly buckets by Asia/Shanghai hour and omits empty hours', () =
 
   assert.equal(result.timeZone, DEFAULT_STATS_TIMEZONE);
   assert.equal(result.hours.length, 2);
-  const { localMetrics, ...hour0 } = result.hours[0]!;
+  const { localMetrics, costBreakdown, ...hour0 } = result.hours[0]!;
   assert.equal(localMetrics?.requestCount, null);
+  assert.equal(costBreakdown?.detailedEstimatedCostUsd, hour0.costUsd);
   assert.deepEqual(hour0, {
     date: '2026-07-25',
     hour: 1,

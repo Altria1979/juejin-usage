@@ -54,7 +54,8 @@ import {
   collectWrittenBuckets,
   type SyncResult,
 } from '../sync/index.js';
-import { maybeUploadAfterSync } from '../upload/client.js';
+import { maybeUploadAfterSync, getUploadStatus } from '../upload/client.js';
+import type { UploadStatus } from '../upload/state.js';
 
 export class BucketStore {
   /**
@@ -315,14 +316,14 @@ export async function applySyncResults(
 export async function runSync(
   deps: LocalApiDeps,
   source?: string,
-): Promise<{ ok: boolean; results: Awaited<ReturnType<typeof syncAll>> }> {
+): Promise<{ ok: boolean; results: Awaited<ReturnType<typeof syncAll>>; upload: UploadStatus }> {
   // Prefer shared runner so manual sync cannot overlap poll/notify.
   if (deps.runSyncViaRunner) {
     // The runner already applies results and notifies the UI exactly once
     // when data changed (afterSync / onRoundComplete). Calling `onSync` here
     // as well would broadcast a second data-synced event per manual sync.
     const results = await deps.runSyncViaRunner('manual', source);
-    return { ok: true, results };
+    return { ok: !results.some(result => result.error), results, upload: await getUploadStatus(deps.dataDir, deps.getConfig()) };
   }
 
   const config = deps.getConfig();
@@ -330,7 +331,7 @@ export async function runSync(
   await applySyncResults(deps, results);
   await maybeUploadAfterSync(deps.dataDir, config, collectWrittenBuckets(results));
   if (deps.onSync) await deps.onSync(source);
-  return { ok: true, results };
+  return { ok: !results.some(result => result.error), results, upload: await getUploadStatus(deps.dataDir, deps.getConfig()) };
 }
 
 /**
@@ -398,7 +399,8 @@ export async function getSyncStatusPayload(
 ): Promise<SyncStatus> {
   const hookStatus = hooks ?? (await getHookStatus(dataDir));
   const cursors = await loadCursors(dataDir);
-  return buildSyncStatus(config, rows, hookStatus, cursors.cursor?.lastError ?? null);
+  return { ...buildSyncStatus(config, rows, hookStatus, cursors.cursor?.lastError ?? null),
+    upload: await getUploadStatus(dataDir, config) };
 }
 
 /**

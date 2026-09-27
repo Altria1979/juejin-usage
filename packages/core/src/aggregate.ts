@@ -1,5 +1,9 @@
 import {
   aggregateLocalMetrics,
+  emptyCostBreakdown,
+  mergeCostBreakdowns,
+  costBreakdownFromBucket,
+  type CostBreakdown,
   emptyLocalMetrics,
   mergeLocalMetrics,
   metricsFromBucket,
@@ -15,7 +19,11 @@ import type {
 } from './types.js';
 import { dailyModelKey } from './daily-model-key.js';
 import { normalizeProjectName } from './project-label.js';
-import { computeRowCost, computeTokens, roundCostUsd } from './pricing/index.js';
+import {
+  computeRowCost,
+  computeTokens,
+  roundCostUsd,
+} from './pricing/index.js';
 import { ingestBucketKey } from './queue/keys.js';
 import {
   DEFAULT_STATS_TIMEZONE,
@@ -34,10 +42,16 @@ export function aggregateUsageSummary(
     {
       tokens: number;
       costUsd: number;
+      costBreakdown: CostBreakdown;
       localMetrics: LocalUsageMetrics;
       models: Map<
         string,
-        { tokens: number; costUsd: number; localMetrics: LocalUsageMetrics }
+        {
+          tokens: number;
+          costUsd: number;
+          costBreakdown: CostBreakdown;
+          localMetrics: LocalUsageMetrics;
+        }
       >;
     }
   >();
@@ -57,14 +71,24 @@ export function aggregateUsageSummary(
     const src = bySourceMap.get(row.source) ?? {
       tokens: 0,
       costUsd: 0,
+      costBreakdown: emptyCostBreakdown(),
       localMetrics: emptyLocalMetrics(),
       models: new Map<
         string,
-        { tokens: number; costUsd: number; localMetrics: LocalUsageMetrics }
+        {
+          tokens: number;
+          costUsd: number;
+          costBreakdown: CostBreakdown;
+          localMetrics: LocalUsageMetrics;
+        }
       >(),
     };
     src.tokens += tokens;
     src.costUsd += cost;
+    src.costBreakdown = mergeCostBreakdowns([
+      src.costBreakdown,
+      costBreakdownFromBucket(row, cost),
+    ]);
     src.localMetrics = mergeLocalMetrics([
       src.localMetrics,
       metricsFromBucket(row),
@@ -73,10 +97,15 @@ export function aggregateUsageSummary(
     const model = src.models.get(row.model) ?? {
       tokens: 0,
       costUsd: 0,
+      costBreakdown: emptyCostBreakdown(),
       localMetrics: emptyLocalMetrics(),
     };
     model.tokens += tokens;
     model.costUsd += cost;
+    model.costBreakdown = mergeCostBreakdowns([
+      model.costBreakdown,
+      costBreakdownFromBucket(row, cost),
+    ]);
     model.localMetrics = mergeLocalMetrics([
       model.localMetrics,
       metricsFromBucket(row),
@@ -96,6 +125,7 @@ export function aggregateUsageSummary(
       source,
       tokens: v.tokens,
       costUsd: roundCostUsd(v.costUsd),
+      costBreakdown: v.costBreakdown,
       localMetrics: v.localMetrics,
       pct: pct(v.tokens, totalTokens),
       models: Array.from(v.models.entries())
@@ -103,6 +133,7 @@ export function aggregateUsageSummary(
           model,
           tokens: m.tokens,
           costUsd: roundCostUsd(m.costUsd),
+          costBreakdown: m.costBreakdown,
           localMetrics: m.localMetrics,
           pct: pct(m.tokens, v.tokens),
         }))
@@ -111,6 +142,16 @@ export function aggregateUsageSummary(
     .sort((a, b) => b.tokens - a.tokens);
 
   return {
+    costBreakdown: mergeCostBreakdowns(
+      rows.map((row) => costBreakdownFromBucket(row, computeRowCost(row))),
+    ),
+    todayCostBreakdown: mergeCostBreakdowns(
+      rows
+        .filter(
+          (row) => localDateAndHour(row.hour_start, timeZone).date === today,
+        )
+        .map((row) => costBreakdownFromBucket(row, computeRowCost(row))),
+    ),
     localMetrics: aggregateLocalMetrics(rows),
     todayLocalMetrics: aggregateLocalMetrics(
       rows.filter(
@@ -161,7 +202,8 @@ export function aggregateForIngest(rows: QueueBucket[]): IngestBucket[] {
       existing.total_tokens += row.total_tokens;
       existing.conversation_count += row.conversation_count;
       if (reported != null) {
-        existing.reported_cost_usd = (existing.reported_cost_usd ?? 0) + reported;
+        existing.reported_cost_usd =
+          (existing.reported_cost_usd ?? 0) + reported;
       }
     }
   }
@@ -173,10 +215,7 @@ function pct(part: number, total: number): number {
   return Math.round((part / total) * 1000) / 10;
 }
 
-function statsSinceLocalDate(
-  statsSince: string,
-  timeZone: string,
-): string {
+function statsSinceLocalDate(statsSince: string, timeZone: string): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(statsSince)) return statsSince;
   return localDateAndHour(statsSince, timeZone).date;
 }
@@ -211,6 +250,7 @@ export function aggregateDaily(
     options,
   );
 
+  const rowsByDay = new Map<string, QueueBucket[]>();
   const byDay = new Map<
     string,
     {
@@ -220,13 +260,26 @@ export function aggregateDaily(
       outputTokens: number;
       cachedInputTokens: number;
       cacheCreationInputTokens: number;
+      costBreakdown: CostBreakdown;
       localMetrics: LocalUsageMetrics;
       sources: Map<
         string,
-        { tokens: number; costUsd: number; localMetrics: LocalUsageMetrics }
+        {
+          tokens: number;
+          costUsd: number;
+          costBreakdown: CostBreakdown;
+          localMetrics: LocalUsageMetrics;
+        }
       >;
       models: Map<string, number>;
-      projects: Map<string, { tokens: number; models: Map<string, number> }>;
+      projects: Map<
+        string,
+        {
+          tokens: number;
+          costBreakdown: CostBreakdown;
+          models: Map<string, number>;
+        }
+      >;
     }
   >();
 
@@ -234,27 +287,34 @@ export function aggregateDaily(
     const { date } = localDateAndHour(row.hour_start, timeZone);
     if (date < fromDate || date > toDate || date < statsSinceDate) continue;
 
+    const dayRows = rowsByDay.get(date) ?? [];
+    dayRows.push(row);
+    rowsByDay.set(date, dayRows);
+
     // 总 Token = 五类 total_tokens（与 main / 入库一致）；输入/输出另字段真实下发。
     const tokens = computeTokens(row);
     const inputTokens = row.input_tokens || 0;
     const outputTokens = row.output_tokens || 0;
     const cost = computeRowCost(row);
-    const day =
-      byDay.get(date) ??
-      {
-        tokens: 0,
-        costUsd: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        cachedInputTokens: 0,
-        cacheCreationInputTokens: 0,
-        localMetrics: emptyLocalMetrics(),
-        sources: new Map(),
-        models: new Map<string, number>(),
-        projects: new Map(),
-      };
+    const day = byDay.get(date) ?? {
+      tokens: 0,
+      costUsd: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      costBreakdown: emptyCostBreakdown(),
+      localMetrics: emptyLocalMetrics(),
+      sources: new Map(),
+      models: new Map<string, number>(),
+      projects: new Map(),
+    };
     day.tokens += tokens;
     day.costUsd += cost;
+    day.costBreakdown = mergeCostBreakdowns([
+      day.costBreakdown,
+      costBreakdownFromBucket(row, cost),
+    ]);
     day.inputTokens += inputTokens;
     day.outputTokens += outputTokens;
     day.cachedInputTokens += row.cached_input_tokens || 0;
@@ -264,10 +324,15 @@ export function aggregateDaily(
     const source = day.sources.get(row.source) ?? {
       tokens: 0,
       costUsd: 0,
+      costBreakdown: emptyCostBreakdown(),
       localMetrics: emptyLocalMetrics(),
     };
     source.tokens += tokens;
     source.costUsd += cost;
+    source.costBreakdown = mergeCostBreakdowns([
+      source.costBreakdown,
+      costBreakdownFromBucket(row, cost),
+    ]);
     source.localMetrics = mergeLocalMetrics([source.localMetrics, metrics]);
     day.sources.set(row.source, source);
     const modelKey = dailyModelKey(row.source, row.model);
@@ -275,43 +340,66 @@ export function aggregateDaily(
 
     const projectName = normalizeProjectName(row.project || 'unknown');
     const project = day.projects.get(projectName) ?? {
+      costBreakdown: emptyCostBreakdown(),
       tokens: 0,
       models: new Map<string, number>(),
     };
     project.tokens += tokens;
+    project.costBreakdown = mergeCostBreakdowns([
+      project.costBreakdown,
+      costBreakdownFromBucket(row, cost),
+    ]);
     project.models.set(modelKey, (project.models.get(modelKey) ?? 0) + tokens);
     day.projects.set(projectName, project);
     byDay.set(date, day);
   }
 
   const daysOut = Array.from(byDay.entries())
-    .map(([date, v]) => ({
-      date,
-      tokens: v.tokens,
-      costUsd: roundCostUsd(v.costUsd),
-      inputTokens: v.inputTokens,
-      outputTokens: v.outputTokens,
-      cachedInputTokens: v.cachedInputTokens,
-      cacheCreationInputTokens: v.cacheCreationInputTokens,
-      localMetrics: v.localMetrics,
-      sources: Array.from(v.sources, ([source, data]) => ({
-        ...data,
-        source,
-        costUsd: roundCostUsd(data.costUsd),
-      })),
-      models: Object.fromEntries(
-        Array.from(v.models.entries()).sort((a, b) => b[1] - a[1]),
-      ),
-      projects: Array.from(v.projects.entries())
-        .map(([project, p]) => ({
-          project,
-          tokens: p.tokens,
-          models: Object.fromEntries(
-            Array.from(p.models.entries()).sort((a, b) => b[1] - a[1]),
-          ),
-        }))
-        .sort((a, b) => b.tokens - a.tokens),
-    }))
+    .map(([date, v]) => {
+      const breakdown = aggregateModelBreakdown(
+        rowsByDay.get(date) ?? [],
+        1,
+        statsSince,
+        timeZone,
+        { fromDate: date, toDate: date },
+      );
+      const projects = new Map(
+        breakdown.projects.map((project) => [project.project, project]),
+      );
+      return {
+        date,
+        modelBreakdown: breakdown.models,
+        tokens: v.tokens,
+        costUsd: roundCostUsd(v.costUsd),
+        inputTokens: v.inputTokens,
+        outputTokens: v.outputTokens,
+        cachedInputTokens: v.cachedInputTokens,
+        cacheCreationInputTokens: v.cacheCreationInputTokens,
+        costBreakdown: v.costBreakdown,
+        localMetrics: v.localMetrics,
+        sources: Array.from(v.sources, ([source, data]) => ({
+          ...data,
+          source,
+          costUsd: roundCostUsd(data.costUsd),
+        })),
+        models: Object.fromEntries(
+          Array.from(v.models.entries()).sort((a, b) => b[1] - a[1]),
+        ),
+        projects: Array.from(v.projects.entries())
+          .map(([project, p]) => ({
+            project,
+            costUsd: projects.get(project)?.costUsd,
+            localMetrics: projects.get(project)?.localMetrics,
+            modelBreakdown: projects.get(project)?.models,
+            tokens: p.tokens,
+            costBreakdown: p.costBreakdown,
+            models: Object.fromEntries(
+              Array.from(p.models.entries()).sort((a, b) => b[1] - a[1]),
+            ),
+          }))
+          .sort((a, b) => b.tokens - a.tokens),
+      };
+    })
     .sort((a, b) => a.date.localeCompare(b.date));
 
   return { days: daysOut };
@@ -346,6 +434,7 @@ export function aggregateHourly(
       inputTokens: number;
       outputTokens: number;
       cachedInputTokens: number;
+      costBreakdown: CostBreakdown;
       localMetrics: LocalUsageMetrics;
     }
   >();
@@ -367,10 +456,15 @@ export function aggregateHourly(
       inputTokens: 0,
       outputTokens: 0,
       cachedInputTokens: 0,
+      costBreakdown: emptyCostBreakdown(),
       localMetrics: emptyLocalMetrics(),
     };
     existing.tokens += tokens;
     existing.costUsd += cost;
+    existing.costBreakdown = mergeCostBreakdowns([
+      existing.costBreakdown,
+      costBreakdownFromBucket(row, cost),
+    ]);
     existing.inputTokens += row.input_tokens || 0;
     existing.outputTokens += row.output_tokens || 0;
     existing.cachedInputTokens += row.cached_input_tokens || 0;
@@ -417,6 +511,7 @@ export function aggregateModelBreakdown(
       source: string;
       tokens: number;
       costUsd: number;
+      costBreakdown: CostBreakdown;
       localMetrics: LocalUsageMetrics;
     }
   >();
@@ -424,6 +519,7 @@ export function aggregateModelBreakdown(
     string,
     {
       project: string;
+      costBreakdown: CostBreakdown;
       localMetrics: LocalUsageMetrics;
       tokens: number;
       costUsd: number;
@@ -434,6 +530,7 @@ export function aggregateModelBreakdown(
           source: string;
           tokens: number;
           costUsd: number;
+          costBreakdown: CostBreakdown;
           localMetrics: LocalUsageMetrics;
         }
       >;
@@ -453,10 +550,15 @@ export function aggregateModelBreakdown(
       source: row.source,
       tokens: 0,
       costUsd: 0,
+      costBreakdown: emptyCostBreakdown(),
       localMetrics: emptyLocalMetrics(),
     };
     entry.tokens += tokens;
     entry.costUsd += cost;
+    entry.costBreakdown = mergeCostBreakdowns([
+      entry.costBreakdown,
+      costBreakdownFromBucket(row, cost),
+    ]);
     entry.localMetrics = mergeLocalMetrics([
       entry.localMetrics,
       metricsFromBucket(row),
@@ -466,6 +568,7 @@ export function aggregateModelBreakdown(
     const projectName = normalizeProjectName(row.project || 'unknown');
     const project = byProject.get(projectName) ?? {
       project: projectName,
+      costBreakdown: emptyCostBreakdown(),
       localMetrics: emptyLocalMetrics(),
       tokens: 0,
       costUsd: 0,
@@ -473,6 +576,10 @@ export function aggregateModelBreakdown(
     };
     project.tokens += tokens;
     project.costUsd += cost;
+    project.costBreakdown = mergeCostBreakdowns([
+      project.costBreakdown,
+      costBreakdownFromBucket(row, cost),
+    ]);
     project.localMetrics = mergeLocalMetrics([
       project.localMetrics,
       metricsFromBucket(row),
@@ -482,10 +589,15 @@ export function aggregateModelBreakdown(
       source: row.source,
       tokens: 0,
       costUsd: 0,
+      costBreakdown: emptyCostBreakdown(),
       localMetrics: emptyLocalMetrics(),
     };
     projectModel.tokens += tokens;
     projectModel.costUsd += cost;
+    projectModel.costBreakdown = mergeCostBreakdowns([
+      projectModel.costBreakdown,
+      costBreakdownFromBucket(row, cost),
+    ]);
     projectModel.localMetrics = mergeLocalMetrics([
       projectModel.localMetrics,
       metricsFromBucket(row),
@@ -501,6 +613,7 @@ export function aggregateModelBreakdown(
       source: v.source,
       tokens: v.tokens,
       costUsd: roundCostUsd(v.costUsd),
+      costBreakdown: v.costBreakdown,
       localMetrics: v.localMetrics,
       pct: pct(v.tokens, totalTokens),
     }))
@@ -511,6 +624,7 @@ export function aggregateModelBreakdown(
       project: v.project,
       tokens: v.tokens,
       costUsd: roundCostUsd(v.costUsd),
+      costBreakdown: v.costBreakdown,
       localMetrics: v.localMetrics,
       pct: pct(v.tokens, totalTokens),
       models: Array.from(v.models.values())
@@ -519,6 +633,7 @@ export function aggregateModelBreakdown(
           source: m.source,
           tokens: m.tokens,
           costUsd: roundCostUsd(m.costUsd),
+          costBreakdown: m.costBreakdown,
           localMetrics: m.localMetrics,
           pct: pct(m.tokens, v.tokens),
         }))

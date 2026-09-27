@@ -1,5 +1,64 @@
 import type { QueueBucket } from './types.js';
 
+/** Additive attribution of the existing estimate, not a provider bill. */
+export interface CostBreakdown {
+  detailedEstimatedCostUsd: number;
+  ledgerEstimatedCostUsd: number;
+  ledgerTokens: number;
+  unverifiedLedgerTokens: number;
+}
+
+export function emptyCostBreakdown(): CostBreakdown {
+  return {
+    detailedEstimatedCostUsd: 0,
+    ledgerEstimatedCostUsd: 0,
+    ledgerTokens: 0,
+    unverifiedLedgerTokens: 0,
+  };
+}
+
+export function mergeCostBreakdowns(
+  parts: readonly CostBreakdown[],
+): CostBreakdown {
+  const result = emptyCostBreakdown();
+  for (const part of parts) {
+    result.detailedEstimatedCostUsd += part.detailedEstimatedCostUsd;
+    result.ledgerEstimatedCostUsd += part.ledgerEstimatedCostUsd;
+    result.ledgerTokens += part.ledgerTokens;
+    result.unverifiedLedgerTokens += part.unverifiedLedgerTokens;
+  }
+  return result;
+}
+
+/** A missing server field means unknown, not a known zero. */
+export function mergeOptionalCostBreakdowns(
+  parts: readonly (CostBreakdown | undefined)[],
+): CostBreakdown | undefined {
+  return parts.some((part) => part === undefined)
+    ? undefined
+    : mergeCostBreakdowns(parts as CostBreakdown[]);
+}
+
+export function costBreakdownFromBucket(
+  row: QueueBucket,
+  costUsd: number,
+): CostBreakdown {
+  if (row.source !== 'codex' || row.collector !== 'codex-ledger') {
+    return { ...emptyCostBreakdown(), detailedEstimatedCostUsd: costUsd };
+  }
+  const tokens = Math.max(0, row.total_tokens);
+  const unverified = row.ledger_unverified_tokens;
+  return {
+    detailedEstimatedCostUsd: 0,
+    ledgerEstimatedCostUsd: costUsd,
+    ledgerTokens: tokens,
+    unverifiedLedgerTokens:
+      typeof unverified === 'number' && Number.isFinite(unverified)
+        ? Math.min(tokens, Math.max(0, unverified))
+        : tokens,
+  };
+}
+
 export type LocalMetricMissingReason =
   | 'legacy_data'
   | 'unsupported_source'
@@ -110,8 +169,9 @@ export function metricsFromBucket(row: QueueBucket): LocalUsageMetrics {
   ) {
     return emptyLocalMetrics();
   }
+  const ledger = row.source === 'codex' && row.collector === 'codex-ledger';
   const evidence =
-    row.local_metrics?.version === 1 ? row.local_metrics : undefined;
+    !ledger && row.local_metrics?.version === 1 ? row.local_metrics : undefined;
   const countValid =
     evidence &&
     Number.isSafeInteger(evidence.requestCount) &&
@@ -124,7 +184,7 @@ export function metricsFromBucket(row: QueueBucket): LocalUsageMetrics {
     row.cache_creation_input_tokens,
     row.reasoning_output_tokens,
   ].every((n) => Number.isFinite(n) && n >= 0);
-  const legacyCache = LEGACY_CACHE_SOURCES.has(row.source);
+  const legacyCache = !ledger && LEGACY_CACHE_SOURCES.has(row.source);
   const readKnown =
     valid && (evidence ? evidence.cacheReadComplete : legacyCache);
   const writeKnown =
@@ -132,6 +192,7 @@ export function metricsFromBucket(row: QueueBucket): LocalUsageMetrics {
   // Prefer localEvidence (cc-switch-style). Else conversation_count
   // (TokenTracker-style) is a known lower bound for any source that records it.
   const conversationKnown =
+    !ledger &&
     !countValid &&
     Number.isSafeInteger(row.conversation_count) &&
     row.conversation_count > 0
@@ -153,7 +214,11 @@ export function metricsFromBucket(row: QueueBucket): LocalUsageMetrics {
     missingReasons: [
       ...new Set<LocalMetricMissingReason>([
         ...(evidence?.missingReasons ?? [
-          legacyCache ? 'legacy_data' : 'unsupported_source',
+          ledger
+            ? 'missing_fields'
+            : legacyCache
+              ? 'legacy_data'
+              : 'unsupported_source',
         ]),
         ...(!valid || (evidence && !countValid)
           ? ['invalid_usage' as const]

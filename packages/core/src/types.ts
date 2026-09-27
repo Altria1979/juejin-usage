@@ -1,13 +1,18 @@
+import type { UploadStatus } from './upload/state.js';
 import type {
+  CostBreakdown,
   LocalMetricEvidence,
   LocalUsageMetrics,
 } from './local-metrics.js';
 export type {
+  CostBreakdown,
   LocalMetricEvidence,
   LocalUsageMetrics,
 } from './local-metrics.js';
 
 export interface QueueBucket {
+  /** Local-only legacy/unlocatable ledger amount; never part of ingest. */
+  ledger_unverified_tokens?: number;
   /** Local-only request/cache evidence. Never uploaded. */
   local_metrics?: LocalMetricEvidence;
   hour_start: string;
@@ -343,23 +348,45 @@ export interface CursorsFile {
   };
   kilocode?: {
     seenIds?: string[];
-    fileOffsets?: Record<string, { size: number; mtimeMs: number; ino: number }>;
+    fileOffsets?: Record<
+      string,
+      { size: number; mtimeMs: number; ino: number }
+    >;
   };
   kimi?: {
     seenIds?: string[];
-    fileOffsets?: Record<string, { size: number; inode?: number; ino?: number; mtimeMs?: number; offset?: number; model?: string }>;
+    fileOffsets?: Record<
+      string,
+      {
+        size: number;
+        inode?: number;
+        ino?: number;
+        mtimeMs?: number;
+        offset?: number;
+        model?: string;
+      }
+    >;
   };
   roocode?: {
     seenIds?: string[];
-    fileOffsets?: Record<string, { size: number; mtimeMs: number; ino?: number; inode?: number }>;
+    fileOffsets?: Record<
+      string,
+      { size: number; mtimeMs: number; ino?: number; inode?: number }
+    >;
   };
   cline?: {
     seenIds?: string[];
-    fileOffsets?: Record<string, { size: number; mtimeMs: number; ino: number }>;
+    fileOffsets?: Record<
+      string,
+      { size: number; mtimeMs: number; ino: number }
+    >;
   };
   amp?: {
     seenIds?: string[];
-    fileOffsets?: Record<string, { size: number; mtimeMs: number; ino: number }>;
+    fileOffsets?: Record<
+      string,
+      { size: number; mtimeMs: number; ino: number }
+    >;
   };
   qwen?: {
     seenIds?: string[];
@@ -406,7 +433,10 @@ export interface CursorsFile {
   };
   codebuddy?: {
     seenIds?: string[];
-    fileOffsets?: Record<string, { size: number; mtimeMs: number; ino: number }>;
+    fileOffsets?: Record<
+      string,
+      { size: number; mtimeMs: number; ino: number }
+    >;
     logModelsByAgent?: Record<string, string>;
     updatedAt?: string;
     /** Message ids already ingested from the CodeBuddy App / editor extension history. */
@@ -416,7 +446,10 @@ export interface CursorsFile {
   };
   workbuddy?: {
     seenIds?: string[];
-    fileOffsets?: Record<string, { size: number; mtimeMs: number; ino: number }>;
+    fileOffsets?: Record<
+      string,
+      { size: number; mtimeMs: number; ino: number }
+    >;
     sqliteSessions?: Record<
       string,
       { used: number; updatedAt?: number; model?: string }
@@ -440,7 +473,10 @@ export interface CursorsFile {
       }
     >;
     seenSessions?: string[];
-    updateOffsets?: Record<string, { size: number; mtimeMs: number; ino: number }>;
+    updateOffsets?: Record<
+      string,
+      { size: number; mtimeMs: number; ino: number }
+    >;
     updatedAt?: string;
   };
   goose?: {
@@ -530,6 +566,7 @@ export interface ManifestFile {
 }
 
 export interface ModelUsageRow {
+  costBreakdown?: CostBreakdown;
   localMetrics?: LocalUsageMetrics;
   model: string;
   tokens: number;
@@ -538,6 +575,7 @@ export interface ModelUsageRow {
 }
 
 export interface SourceUsageRow {
+  costBreakdown?: CostBreakdown;
   localMetrics?: LocalUsageMetrics;
   source: string;
   tokens: number;
@@ -548,8 +586,10 @@ export interface SourceUsageRow {
 
 export interface UsageSummary {
   /** Aggregated local request/cache evidence across the summary window. */
+  costBreakdown?: CostBreakdown;
   localMetrics?: LocalUsageMetrics;
   /** Same evidence restricted to the local "today" date. */
+  todayCostBreakdown?: CostBreakdown;
   todayLocalMetrics?: LocalUsageMetrics;
   totalTokens: number;
   totalCostUsd: number;
@@ -561,12 +601,17 @@ export interface UsageSummary {
 
 /** Per-day project slice; model keys use `dailyModelKey(source, model)`. */
 export interface DailyProjectUsage {
+  costUsd?: number;
+  localMetrics?: LocalUsageMetrics;
+  modelBreakdown?: ProjectModelBreakdownRow[];
+  costBreakdown?: CostBreakdown;
   project: string;
   tokens: number;
   models: Record<string, number>;
 }
 
 export interface DailyUsageRow {
+  modelBreakdown?: ModelBreakdownRow[];
   date: string;
   tokens: number;
   costUsd: number;
@@ -583,8 +628,10 @@ export interface DailyUsageRow {
     source: string;
     tokens: number;
     costUsd: number;
+    costBreakdown?: CostBreakdown;
     localMetrics: LocalUsageMetrics;
   }>;
+  costBreakdown?: CostBreakdown;
   localMetrics?: LocalUsageMetrics;
 }
 
@@ -603,6 +650,7 @@ export interface HourlyUsageRow {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  costBreakdown?: CostBreakdown;
   localMetrics?: LocalUsageMetrics;
 }
 
@@ -612,6 +660,7 @@ export interface HourlyUsageResponse {
 }
 
 export interface ModelBreakdownRow {
+  costBreakdown?: CostBreakdown;
   localMetrics?: LocalUsageMetrics;
   model: string;
   source: string;
@@ -621,6 +670,7 @@ export interface ModelBreakdownRow {
 }
 
 export interface ProjectModelBreakdownRow {
+  costBreakdown?: CostBreakdown;
   localMetrics?: LocalUsageMetrics;
   model: string;
   source: string;
@@ -631,6 +681,7 @@ export interface ProjectModelBreakdownRow {
 }
 
 export interface ProjectBreakdownRow {
+  costBreakdown?: CostBreakdown;
   localMetrics?: LocalUsageMetrics;
   project: string;
   tokens: number;
@@ -720,6 +771,7 @@ export interface LeaderboardOverviewResponse {
 }
 
 export interface SyncStatus {
+  upload?: UploadStatus;
   lastSyncAt: string | null;
   lastUploadAt: string | null;
   /** Server ingest floor (env or rolling 90d); optional on local mock. */
