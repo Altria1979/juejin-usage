@@ -1,0 +1,21 @@
+packages/core/test/claude-desktop.test.ts
+  s_b8fe478b6da5a2::t_bcbce7ac1ae04b 139-140
+packages/core/test/project-name.test.ts
+  s_b8fe478b6da5a2::t_bcbce7ac1ae04b 65-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "273309f41e4d21c7e02f29091d9525e3a8bc3724",
+  "prompts": {},
+  "sessions": {
+    "s_b8fe478b6da5a2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e2f0-93b7-7bb2-8ae0-fc421d4c3009",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
