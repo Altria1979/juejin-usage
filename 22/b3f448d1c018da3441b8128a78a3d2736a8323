@@ -1,0 +1,25 @@
+packages/core/src/upload/client.ts
+  s_b8fe478b6da5a2::t_2ef0eb049b5988 318-324
+packages/core/src/upload/confirmation.ts
+  s_b8fe478b6da5a2::t_a66398564ea8da 11-15,30-32
+packages/core/src/upload/state.ts
+  s_b8fe478b6da5a2::t_30c65de7ec709f 108-217,220-228,248,250-251
+packages/core/test/upload-confirmation.test.ts
+  s_b8fe478b6da5a2::t_ff28d39e2de1ff 274,343-355,587-626
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "22b3f448d1c018da3441b8128a78a3d2736a8323",
+  "prompts": {},
+  "sessions": {
+    "s_b8fe478b6da5a2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e2f0-93b7-7bb2-8ae0-fc421d4c3009",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
