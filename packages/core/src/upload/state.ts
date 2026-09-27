@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { lock } from 'proper-lockfile';
 
 import type { IngestBucket } from '../types.js';
+import type { IngestEventPayload } from './events.js';
 import { ingestBucketKey } from '../queue/keys.js';
 
 export interface BackfillItem {
@@ -13,6 +14,8 @@ export interface BackfillItem {
   nextRetryAt: string | null;
   /** Exact local snapshot persisted before its normalized event is sent. */
   snapshot?: IngestBucket;
+  /** Canonical wire payload of this snapshot, including normalized conversations/cost. */
+  event?: IngestEventPayload;
 }
 
 export interface BackfillState {
@@ -85,6 +88,9 @@ function cloneBackfill(backfill: BackfillState | undefined): BackfillState {
     items: (backfill?.items ?? []).map((item) => ({
       ...item,
       ...(item.snapshot ? { snapshot: { ...item.snapshot } } : {}),
+      ...(item.event
+        ? { event: { ...item.event, usage: { ...item.event.usage } } }
+        : {}),
     })),
     enqueuedSince: backfill?.enqueuedSince ?? null,
   };

@@ -250,6 +250,7 @@ export const UPLOAD_REPAIR_VERSION = 1;
 export function enqueueUploadSnapshots(
   slot: UploadSlotState,
   buckets: IngestBucket[],
+  deviceId: string,
   since?: string,
 ): UploadSlotState {
   const next = enqueueBackfillKeys(
@@ -268,6 +269,7 @@ export function enqueueUploadSnapshots(
     return {
       ...item,
       snapshot: { ...snapshot },
+      event: bucketToIngestEvent(snapshot, deviceId) ?? undefined,
       ...(changed ? { attempts: 0, nextRetryAt: null } : {}),
     };
   });
@@ -388,7 +390,7 @@ async function processPending(
     const bucket = byKey.get(item.key) ?? item.snapshot;
     return bucket ? [bucket] : [];
   });
-  slot = enqueueUploadSnapshots(slot, snapshots);
+  slot = enqueueUploadSnapshots(slot, snapshots, deviceId);
   const heldKeys = new Set(selected.hold.map((item) => item.key));
   const missingKeys = new Set(
     selected.send
@@ -400,9 +402,12 @@ async function processPending(
       ? applyIngestHold([item], nowMs)[0]!
       : item,
   );
+  const prepared = new Map(
+    slot.backfill!.items.map((item) => [item.key, item.event]),
+  );
   const events = snapshots
-    .map((bucket) => bucketToIngestEvent(bucket, deviceId))
-    .filter((event) => event !== null);
+    .map((bucket) => prepared.get(ingestBucketKey(bucket)))
+    .filter((event) => event !== undefined);
   if (snapshots.length > 0) slot.lastAttemptAt = new Date(nowMs).toISOString();
   // This write must succeed before any remote mutation begins.
   file = await persistSlot(dataDir, file, apiUrl, deviceId, slot);
@@ -515,6 +520,7 @@ export async function uploadToServer(
     slot = enqueueUploadSnapshots(
       slot,
       delta,
+      deviceId,
       incremental ? undefined : loadSince,
     );
     slot.repairVersion = UPLOAD_REPAIR_VERSION;

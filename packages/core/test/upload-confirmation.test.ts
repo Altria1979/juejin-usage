@@ -96,6 +96,15 @@ test('zero accepted never commits hash; pending is already durable when POST sta
       durableAtPost = !!slot.backfill?.items.some(
         (item) => item.key === ingestBucketKey(bucket),
       );
+      const pending = slot.backfill!.items.find(
+        (item) => item.key === ingestBucketKey(bucket),
+      )!;
+      assert.equal(pending.event?.conversations_count, 1);
+      assert.equal(pending.event?.reported_cost_usd, undefined);
+      assert.deepEqual(
+        pending.event,
+        bucketToIngestEvent(aggregateForIngest([bucket])[0]!, deviceId),
+      );
       return json({ accepted_count: 0, duplicate_count: 0 });
     }) as typeof fetch;
     await uploadToServer(dir, config(dir), { skipDrain: true }).catch(

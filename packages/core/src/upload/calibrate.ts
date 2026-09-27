@@ -671,7 +671,15 @@ export async function applyCalibrateSelectedDates(
       let slot = enqueueUploadSnapshots(
         getUploadSlot(file, target.apiUrl, target.deviceId),
         daySnapshots,
+        target.deviceId,
       );
+      const wireEvents = new Map(
+        batch.events.map((event) => [event.event_id, event]),
+      );
+      slot.backfill!.items = slot.backfill!.items.map((item) => {
+        const event = item.event && wireEvents.get(item.event.event_id);
+        return event ? { ...item, event } : item;
+      });
       slot.lastAttemptAt = new Date().toISOString();
       await saveUploadStateFile(
         dataDir,
