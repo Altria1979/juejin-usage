@@ -1,0 +1,31 @@
+packages/core/src/parsers/codex-ledger-state.ts
+  s_b8fe478b6da5a2::t_d564b86aa0f5fa 1-297
+packages/core/src/parsers/codex-ledger.ts
+  s_b8fe478b6da5a2::t_cbd7dfde2bb488 18,20-21,74-76,334,373-386,403-411
+packages/core/src/parsers/codex.ts
+  s_b8fe478b6da5a2::t_f49b280992f512 1,16,180,182-183,191,250-251,259-260,326-331,359-362,370-372,418-424,452,456,469-472
+packages/core/src/queue/align-unknown.ts
+  s_b8fe478b6da5a2::t_85a4fe7d6ec7bf 73,178-179
+packages/core/src/queue/index.ts
+  s_b8fe478b6da5a2::t_b49b4ffc535231 2,6-7,64-79,91,97-104,109,114-117,120-129,135,147,248
+packages/core/src/sync/index.ts
+  s_b8fe478b6da5a2::t_ef43ae535aedfb 9,112,181,186-188,192-201,218,237,252-253,285,308-317
+packages/core/test/codex-ledger-reconciliation.test.ts
+  s_b8fe478b6da5a2::t_ac3a7931043d30 1-283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4cff1cadac13b16369c6f85497eae316de82610d",
+  "prompts": {},
+  "sessions": {
+    "s_b8fe478b6da5a2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e2f0-93b7-7bb2-8ae0-fc421d4c3009",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
