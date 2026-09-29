@@ -1,0 +1,49 @@
+.changeset/copilot-subscription-quota.md
+  s_726193307e7c2a::t_28d45c9b1f12ee 1-5
+apps/desktop/README.md
+  s_726193307e7c2a::t_06600279f88bee 77-86
+apps/desktop/src/main/copilot-subscription-ipc.ts
+  s_726193307e7c2a::t_714d0e293b0da8 1-10
+apps/desktop/src/main/copilot-subscription.test.ts
+  s_726193307e7c2a::t_1cd9b2d6f79edb 1-155
+apps/desktop/src/main/copilot-subscription.ts
+  s_726193307e7c2a::t_fc30badcdbfa5a 1-168
+apps/desktop/src/main/index.ts
+  s_726193307e7c2a::t_01e793cb1204ca 38,104,525,687-688
+apps/desktop/src/preload/index.ts
+  s_726193307e7c2a::t_e2fb0f7ae864f2 39,83,147-149
+apps/desktop/src/renderer/components/CopilotSubscriptionCard.tsx
+  s_726193307e7c2a::t_2e363fd2127909 1-64
+apps/desktop/src/renderer/components/SubscriptionBrandIcon.tsx
+  s_726193307e7c2a::t_eb46d70fb03a00 7,17,30
+apps/desktop/src/renderer/components/SubscriptionUsageCard.tsx
+  s_726193307e7c2a::t_89600abcffacfe 113
+apps/desktop/src/renderer/components/SubscriptionUsageGrid.tsx
+  s_726193307e7c2a::t_798b3c91a1e4c9 4,31
+apps/desktop/src/renderer/global.d.ts
+  s_726193307e7c2a::t_d3723c19e7822a 39-41
+apps/desktop/src/shared/copilot-subscription.test.ts
+  s_726193307e7c2a::t_4052bc012dbd86 1-142
+apps/desktop/src/shared/copilot-subscription.ts
+  s_726193307e7c2a::t_c8a57796a24815 1-142
+apps/desktop/src/shared/subscription-channels.test.ts
+  s_726193307e7c2a::t_cc27329576352b 13-14,19
+apps/desktop/src/shared/subscription-channels.ts
+  s_726193307e7c2a::t_53594609ac61b0 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a59f6b0d102d676a44763f0164343e4d6dc5716a",
+  "prompts": {},
+  "sessions": {
+    "s_726193307e7c2a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ec49-26bf-7310-9aab-15b29c17ca87",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
