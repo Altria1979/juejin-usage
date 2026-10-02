@@ -1,0 +1,37 @@
+.changeset/desktop-startup-recovery.md
+  s_eb437e3dd9413a::t_9c30955b94b5d5 1-5
+apps/desktop/src/main/autostart.test.ts
+  s_eb437e3dd9413a::t_85d9d06c91e3f7 1-47
+apps/desktop/src/main/sync-worker.ts
+  s_eb437e3dd9413a::t_03a0c62e9f90d7 19-21
+apps/desktop/src/main/main-window-launcher.test.ts
+  s_eb437e3dd9413a::t_1455b5f53aaffc 1-77
+apps/desktop/src/main/autostart.ts
+  s_eb437e3dd9413a::t_2d4a65571efbe5 375-376
+apps/desktop/src/main/index.ts
+  s_eb437e3dd9413a::t_bcdd795aa356f2 73-74,84-85,99,123-125,286,301-309,316-319,321-323,482-488,549-560,570,594-610,631-632
+apps/desktop/src/main/native-crash-signals.ts
+  s_eb437e3dd9413a::t_03a0c62e9f90d7 1-11
+apps/desktop/src/main/native-crash-signals.test.ts
+  s_eb437e3dd9413a::t_918edf1feff1d2 8
+  s_eb437e3dd9413a::t_9c30955b94b5d5 10
+  s_eb437e3dd9413a::t_03a0c62e9f90d7 1-7,9,11-75
+apps/desktop/src/main/main-window-launcher.ts
+  s_eb437e3dd9413a::t_2d4a65571efbe5 1-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1cd7eece11e517905f4d710ead9e1c03292efcc3",
+  "prompts": {},
+  "sessions": {
+    "s_eb437e3dd9413a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fc27-9ed0-77d2-a481-52f299a18b6f",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
