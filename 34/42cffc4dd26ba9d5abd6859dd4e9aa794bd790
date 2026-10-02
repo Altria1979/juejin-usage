@@ -1,0 +1,99 @@
+.changeset/calm-cursors-wait.md
+  s_fcba688baad1d9::t_9a314b3d39bc87 1-5
+.changeset/copilot-subscription-quota.md
+  s_fcba688baad1d9::t_41a8f6064c10ef 1-5
+.changeset/wps-comate-collector.md
+  s_fcba688baad1d9::t_b92102b1493561 1-5
+apps/desktop/README.md
+  s_fcba688baad1d9::t_74ced3cdb7d05f 77-86
+apps/desktop/src/main/copilot-subscription-ipc.ts
+  s_fcba688baad1d9::t_3d0436da1a4db4 1-10
+apps/desktop/src/main/copilot-subscription.test.ts
+  s_fcba688baad1d9::t_6b871bf7cdeb59 1-155
+apps/desktop/src/main/copilot-subscription.ts
+  s_fcba688baad1d9::t_bea05269654353 1-168
+apps/desktop/src/main/index.ts
+  s_fcba688baad1d9::t_00bff8416c8eef 38,104,525,687-688
+apps/desktop/src/preload/index.ts
+  s_fcba688baad1d9::t_2dd994de25ba86 39,83,147-149
+apps/desktop/src/renderer/assets/brand-logos/wps-comate.svg
+  s_fcba688baad1d9::t_784a0aeb8a2bd8 1-14
+apps/desktop/src/renderer/components/CopilotSubscriptionCard.tsx
+  s_fcba688baad1d9::t_83c965ae1f3de2 1-64
+apps/desktop/src/renderer/components/ProviderIcon.tsx
+  s_fcba688baad1d9::t_3a3e42a45d08be 30,73,152-154
+apps/desktop/src/renderer/components/SubscriptionBrandIcon.tsx
+  s_fcba688baad1d9::t_8eb660650acce6 7,17,30
+apps/desktop/src/renderer/components/SubscriptionUsageCard.tsx
+  s_fcba688baad1d9::t_4c7f5e33f8f532 113
+apps/desktop/src/renderer/components/SubscriptionUsageGrid.tsx
+  s_fcba688baad1d9::t_8d5d8a75792d32 4,31
+apps/desktop/src/renderer/global.d.ts
+  s_fcba688baad1d9::t_54eda22a472abc 39-41
+apps/desktop/src/renderer/index.css
+  s_fcba688baad1d9::t_308ac0bad1b1bb 53,107
+apps/desktop/src/renderer/lib/about.ts
+  s_fcba688baad1d9::t_07fb5beb30fccb 59
+apps/desktop/src/renderer/lib/tokens.ts
+  s_fcba688baad1d9::t_8c54b67f411a3d 41,80,131
+apps/desktop/src/shared/copilot-subscription.test.ts
+  s_fcba688baad1d9::t_2bd52329845ce6 1-142
+apps/desktop/src/shared/copilot-subscription.ts
+  s_fcba688baad1d9::t_94119f11c8d458 1-142
+apps/desktop/src/shared/subscription-channels.test.ts
+  s_fcba688baad1d9::t_509ffb92f3510c 13-14,19
+apps/desktop/src/shared/subscription-channels.ts
+  s_fcba688baad1d9::t_7d3251634eddf7 14
+packages/core/src/index.ts
+  s_fcba688baad1d9::t_d5a54a3a0484d0 52
+packages/core/src/parsers/cursor.ts
+  s_fcba688baad1d9::t_f5c4d5099477f4 19-26,157,173-178
+packages/core/src/parsers/wps-comate.ts
+  s_fcba688baad1d9::t_5d3705d56ff6c9 1-301
+packages/core/src/server/state.ts
+  s_fcba688baad1d9::t_df285d436901f6 53,274-278
+packages/core/src/sync/index.ts
+  s_fcba688baad1d9::t_4f6c06e4206dd5 43,712-715,870,991-993,1272-1275
+packages/core/src/sync/source-presence.ts
+  s_fcba688baad1d9::t_2dcee9e2f45e50 30,200-201
+packages/core/src/tool-catalog.ts
+  s_fcba688baad1d9::t_d470a37cba56ac 109
+packages/core/src/types.ts
+  s_fcba688baad1d9::t_7f723901bbe144 517-525
+packages/core/src/upload/events.ts
+  s_fcba688baad1d9::t_4b77031a3d36d8 41,81
+packages/core/test/cursor.test.ts
+  s_fcba688baad1d9::t_9a33107ab33f62 2-5,13,45-108
+packages/core/test/platform-fixtures.ts
+  s_fcba688baad1d9::t_6cbd38c6711206 93
+packages/core/test/wps-comate.test.ts
+  s_fcba688baad1d9::t_ab3c1826b350d4 1-424
+packages/dashboard/public/brand-logos/wps-comate.svg
+  s_fcba688baad1d9::t_b5fd32b770f72c 1-14
+packages/dashboard/src/assets/brand-logos/wps-comate.svg
+  s_fcba688baad1d9::t_c65f75ac472fd2 1-14
+packages/dashboard/src/components/ProviderIcon.tsx
+  s_fcba688baad1d9::t_9c531310fcdf4f 30,73,152-154
+packages/dashboard/src/index.css
+  s_fcba688baad1d9::t_a5578c663d6b53 51,105
+packages/dashboard/src/lib/about.ts
+  s_fcba688baad1d9::t_1fa0d6c2bdeebc 59
+packages/dashboard/src/lib/tokens.ts
+  s_fcba688baad1d9::t_f795e6e1012066 41,80,131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3442cffc4dd26ba9d5abd6859dd4e9aa794bd790",
+  "prompts": {},
+  "sessions": {
+    "s_fcba688baad1d9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fbb1-dedf-7033-8a2c-d74ab3808193",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
