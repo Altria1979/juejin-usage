@@ -91,7 +91,10 @@ function validateState(value: unknown): asserts value is CodexLedgerState {
 function validCursor(value: unknown): value is NonNullable<CursorsFile['codex']> {
   if (!record(value) || !record(value.files)) return false;
   for (const file of Object.values(value.files)) {
-    if (!record(file) || !count(file.inode) || !count(file.offset) ||
+    // fs.stat exposes Windows file IDs as numbers that can exceed the safe
+    // integer range. Inodes are opaque identifiers; offsets and counts are not.
+    if (!record(file) || typeof file.inode !== 'number' ||
+        !Number.isInteger(file.inode) || file.inode < 0 || !count(file.offset) ||
         (file.tokenCountSeen !== undefined && !count(file.tokenCountSeen))) return false;
     if (file.prevTotal !== undefined && (!record(file.prevTotal) || Object.values(file.prevTotal).some(totals =>
       !record(totals) || Object.values(totals).some(number => number !== undefined && !count(number))))) return false;

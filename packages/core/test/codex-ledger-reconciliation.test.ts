@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { alignUnknownIntoDominant } from '../src/queue/align-unknown.js';
-import { recoverCodexLedgerTransaction } from '../src/parsers/codex-ledger-state.js';
+import { commitCodexLedgerTransaction, recoverCodexLedgerTransaction, withCodexLedgerLock } from '../src/parsers/codex-ledger-state.js';
 import { syncCodex } from '../src/sync/index.js';
 import { appendBuckets, clearCursors, loadCursors, loadRecentBuckets, resetCursorsCache, resetLocalUsageCache } from '../src/queue/index.js';
 import { resetSqliteQueryCache } from '../src/parsers/sqlite.js';
@@ -240,7 +240,30 @@ test('queue readers never expose a partially replaced cross-month ledger snapsho
   });
 });
 
-for (const damage of ['other-source', 'duplicate-key', 'wrong-total', 'negative-offset'] as const) {
+for (const operation of ['commit', 'recovery'] as const) {
+  test(`Codex journal ${operation} accepts filesystem inode numbers above the safe integer range`, async () => {
+    await fixture(async f => {
+      await f.sync();
+      const buckets = await f.rows();
+      const provenance = JSON.parse(await readFile(join(f.dir, 'codex-ledger-provenance.json'), 'utf8'));
+      const codexCursor = (await loadCursors(f.dir)).codex!;
+      const inode = 2 ** 60;
+      assert.equal(Number.isSafeInteger(inode), false);
+      codexCursor.files['synthetic.jsonl'] = { inode, offset: 0 };
+      if (operation === 'commit') {
+        await withCodexLedgerLock(f.dir, () => commitCodexLedgerTransaction(f.dir, buckets, codexCursor, provenance));
+      } else {
+        await writeFile(join(f.dir, 'codex-ledger-pending.json'), JSON.stringify({ version: 1, buckets, codexCursor, provenance }));
+        await recoverCodexLedgerTransaction(f.dir);
+      }
+      assert.deepEqual((await loadCursors(f.dir)).codex, codexCursor);
+      assert.deepEqual(await f.rows(), buckets);
+      await assert.rejects(readFile(join(f.dir, 'codex-ledger-pending.json')), { code: 'ENOENT' });
+    });
+  });
+}
+
+for (const damage of ['other-source', 'duplicate-key', 'wrong-total', 'negative-offset', 'unsafe-offset', 'unsafe-token-count', 'negative-inode', 'fractional-inode'] as const) {
   test(`structurally valid but corrupt journal ${damage} is rejected`, async () => {
     await fixture(async f => {
       await f.sync();
@@ -251,6 +274,10 @@ for (const damage of ['other-source', 'duplicate-key', 'wrong-total', 'negative-
       if (damage === 'duplicate-key') buckets.push({...buckets[0]!});
       if (damage === 'wrong-total') buckets[0]!.total_tokens += 1;
       if (damage === 'negative-offset') codexCursor.files['synthetic.jsonl'] = {inode: 1, offset: -1};
+      if (damage === 'unsafe-offset') codexCursor.files['synthetic.jsonl'] = {inode: 1, offset: 2 ** 60};
+      if (damage === 'unsafe-token-count') codexCursor.files['synthetic.jsonl'] = {inode: 1, offset: 0, tokenCountSeen: 2 ** 60};
+      if (damage === 'negative-inode') codexCursor.files['synthetic.jsonl'] = {inode: -1, offset: 0};
+      if (damage === 'fractional-inode') codexCursor.files['synthetic.jsonl'] = {inode: 1.5, offset: 0};
       await writeFile(join(f.dir, 'codex-ledger-pending.json'), JSON.stringify({version: 1, buckets, codexCursor, provenance}));
       await assert.rejects(f.rows(), /(?:Invalid|Duplicate) pending Codex/);
     });
