@@ -1,0 +1,25 @@
+apps/desktop/src/renderer/lib/codex-subscription-state.test.ts
+  s_75c69b6e3fa6d5::t_3535f1ae38249e 45,47,49-71
+.changeset/nice-ducks-wonder.md
+  s_75c69b6e3fa6d5::t_40624dc8664084 5
+apps/desktop/src/renderer/lib/codex-subscription-state.ts
+  s_75c69b6e3fa6d5::t_40624dc8664084 19-23
+apps/desktop/src/renderer/components/CodexSubscriptionCard.tsx
+  s_75c69b6e3fa6d5::t_40624dc8664084 57-59,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "886e5fb330bbe7f653059f0cb07210ad3425ec19",
+  "prompts": {},
+  "sessions": {
+    "s_75c69b6e3fa6d5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fbc7-fb60-7e32-8d77-904bb1d5218a",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
