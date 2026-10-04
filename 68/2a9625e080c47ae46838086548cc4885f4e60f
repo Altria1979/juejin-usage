@@ -1,0 +1,24 @@
+packages/dashboard/src/components/ProviderIcon.tsx
+  s_569dab5b53770e::t_10b86e4178eb57 18,59
+.changeset/fix-kimi-icon-theme.md
+  s_569dab5b53770e::t_10b86e4178eb57 7
+  s_569dab5b53770e::t_849ae85b7e8f12 1-6
+apps/desktop/src/renderer/components/ProviderIcon.tsx
+  s_569dab5b53770e::t_10b86e4178eb57 18,59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "682a9625e080c47ae46838086548cc4885f4e60f",
+  "prompts": {},
+  "sessions": {
+    "s_569dab5b53770e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a107bc-4cca-7a20-aa20-57dc3ee9a8f2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
