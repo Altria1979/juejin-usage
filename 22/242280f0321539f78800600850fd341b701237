@@ -1,0 +1,56 @@
+apps/desktop/src/main/qoder-subscription-ipc.ts
+  s_9bf2f1eb9919ae::t_915ee7fecd01fa 1-2,7-8,10
+  s_9bf2f1eb9919ae::t_aa2334c450fff5 9
+apps/desktop/src/renderer/lib/subscription-progress.ts
+  s_9bf2f1eb9919ae::t_f653f4760c0e16 4,18-22,25,29-31,39
+  s_9bf2f1eb9919ae::t_4262b665dcbf89 17,24,26-28
+apps/desktop/src/main/qoder-subscription.test.ts
+  s_9bf2f1eb9919ae::t_973d4e341c9f18 22-28,43-104
+  s_9bf2f1eb9919ae::t_2137e5c5c3ee00 3-6,29-42
+apps/desktop/src/shared/qoder-subscription.ts
+  s_9bf2f1eb9919ae::t_f653f4760c0e16 37-41,47,80
+  s_9bf2f1eb9919ae::t_01ff47e840d848 52,54-59,61-62
+apps/desktop/src/main/qoder-app-auth.test.ts
+  s_9bf2f1eb9919ae::t_fbc500f63ad2f7 6,24
+  s_9bf2f1eb9919ae::t_a01921adf1cd60 50
+  s_9bf2f1eb9919ae::t_681f9696d90783 1-5,7-23,25-49,51-143,146-167
+  s_9bf2f1eb9919ae::t_38fd36b26c233f 144-145
+apps/desktop/src/main/qoder-subscription.ts
+  s_9bf2f1eb9919ae::t_915ee7fecd01fa 2,7,11,14-20,35,107-110,113-116,119-124,127-144,146-191,193-194
+  s_9bf2f1eb9919ae::t_2137e5c5c3ee00 51,53,59,61,72-73,96-106,111-112,117-118
+apps/desktop/src/shared/qoder-subscription.test.ts
+  s_9bf2f1eb9919ae::t_712928d92c65af 37-40,42-50,52-55,57-62,64-65
+  s_9bf2f1eb9919ae::t_8c7b65d2245584 66-83
+  s_9bf2f1eb9919ae::t_0276ab0e7e2a2e 41,51,56,63
+apps/desktop/src/main/qoder-app-auth.ts
+  s_9bf2f1eb9919ae::t_a01921adf1cd60 16,63,70
+  s_9bf2f1eb9919ae::t_38fd36b26c233f 37-39,48,67,111-114,116-118
+  s_9bf2f1eb9919ae::t_3394f4701e7f11 45
+  s_9bf2f1eb9919ae::t_5725ac13b01af9 47
+  s_9bf2f1eb9919ae::t_39f3cfe7cdddfb 1-15,17-36,40-44,46,49-62,64-66,68-69,71-110,115,119-176
+.changeset/fix-qoder-app-subscription.md
+  s_9bf2f1eb9919ae::t_02b62799ec49c7 1-5
+apps/desktop/src/renderer/lib/subscription-progress.test.ts
+  s_9bf2f1eb9919ae::t_712928d92c65af 58,60-61,67,69-76
+  s_9bf2f1eb9919ae::t_e0ad52bf77179b 62-66,68,77-87
+  s_9bf2f1eb9919ae::t_f653f4760c0e16 95
+apps/desktop/README.md
+  s_9bf2f1eb9919ae::t_02b62799ec49c7 188-192,194-195
+  s_9bf2f1eb9919ae::t_5725ac13b01af9 193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "22242280f0321539f78800600850fd341b701237",
+  "prompts": {},
+  "sessions": {
+    "s_9bf2f1eb9919ae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f59-afa3-7d41-8d29-66e673909ac6",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
