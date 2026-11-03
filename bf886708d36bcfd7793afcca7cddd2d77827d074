@@ -1,0 +1,19 @@
+README.md
+  s_f10285fe5c5157::t_b7b3fb7f26c7bc 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bf886708d36bcfd7793afcca7cddd2d77827d074",
+  "prompts": {},
+  "sessions": {
+    "s_f10285fe5c5157": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a289-ddcb-7d53-a695-18702ed168e3",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <peng2.yin@ly.com>"
+    }
+  }
+}
