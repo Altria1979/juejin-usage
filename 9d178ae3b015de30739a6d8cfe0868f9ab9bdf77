@@ -1,0 +1,32 @@
+apps/desktop/src/renderer/components/SubscriptionUsageCard.tsx
+  s_0baba10fc398fc::t_e4ac912d28032a 52
+  s_0baba10fc398fc::t_b5784275d4c286 31-32,39,47-48,69-72
+apps/desktop/src/main/codex-subscription.ts
+  s_0baba10fc398fc::t_d1a78d8e47a3f0 12-13,78-87,91,93,96-99,104,107,115,117,132,141
+apps/desktop/src/renderer/lib/codex-subscription-state.test.ts
+  s_0baba10fc398fc::t_f23857b4d7e93b 1-70
+.changeset/nice-ducks-wonder.md
+  s_0baba10fc398fc::t_b5784275d4c286 1-5
+apps/desktop/src/renderer/components/CodexSubscriptionCard.tsx
+  s_0baba10fc398fc::t_b5784275d4c286 2-3,8-11,15,20,25,28,33-34,36,38,40-45,50-52,57-61,85,88-117
+apps/desktop/src/renderer/lib/codex-subscription-state.ts
+  s_0baba10fc398fc::t_f23857b4d7e93b 1-39
+apps/desktop/src/main/codex-subscription.test.ts
+  s_0baba10fc398fc::t_85f951e54ee5f8 2-5,8-31,42-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9d178ae3b015de30739a6d8cfe0868f9ab9bdf77",
+  "prompts": {},
+  "sessions": {
+    "s_0baba10fc398fc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0eb99-d323-7510-bf06-562687309365",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

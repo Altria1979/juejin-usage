@@ -1,0 +1,69 @@
+.changeset/kimi-desktop-adaptation.md
+  s_7a5f320318bd0b::t_040e129cda4fc4 1-9
+apps/desktop/README.md
+  s_7a5f320318bd0b::t_cb1c6a9870989a 87-100
+apps/desktop/src/main/kimi-desktop-context.test.ts
+  s_7a5f320318bd0b::t_94cc93b1937e54 1-220
+apps/desktop/src/main/kimi-desktop-context.ts
+  s_7a5f320318bd0b::t_d5f690e1855f53 1-214
+apps/desktop/src/main/kimi-subscription-ipc.ts
+  s_7a5f320318bd0b::t_b5c7f0c6f562aa 2,8-9
+apps/desktop/src/main/kimi-subscription.test.ts
+  s_7a5f320318bd0b::t_374e25c484b89e 2-4,6-48,60,68-609
+apps/desktop/src/main/kimi-subscription.ts
+  s_7a5f320318bd0b::t_d6aa293806c85b 1,6,8-9,20,27-44,52-53,57-58,64,66,69-71,82-85,87-93,99,101-114,116-124,128,131-134,136-157,159,161-204,207-221,224-228,231-234,236-253,255-277,279-280,282-395,398
+apps/desktop/src/preload/index.ts
+  s_7a5f320318bd0b::t_45c6b817fd15ba 153-154
+apps/desktop/src/renderer/components/KimiSubscriptionCard.tsx
+  s_7a5f320318bd0b::t_df72a34e27aafa 2,9,11,13,17,20,22,24,38-43,55,57,59-75
+apps/desktop/src/renderer/components/SubscriptionUsageCard.tsx
+  s_7a5f320318bd0b::t_d4893831d4a939 24,42
+apps/desktop/src/renderer/global.d.ts
+  s_7a5f320318bd0b::t_57f2050aa8ba07 45-46
+apps/desktop/src/renderer/lib/about.ts
+  s_7a5f320318bd0b::t_d888687dd75971 40
+apps/desktop/src/renderer/lib/kimi-subscription-state.test.ts
+  s_7a5f320318bd0b::t_ae88ce3784747e 1-101
+apps/desktop/src/renderer/lib/kimi-subscription-state.ts
+  s_7a5f320318bd0b::t_fa302e6fbb97dc 1-37
+apps/desktop/src/shared/kimi-subscription.test.ts
+  s_7a5f320318bd0b::t_82c89de6265d0f 3-30,54-163
+apps/desktop/src/shared/kimi-subscription.ts
+  s_7a5f320318bd0b::t_0c285f73776d21 1-2,21,37,93-105,128-135,142-168
+apps/desktop/src/shared/subscription-plan.test.ts
+  s_7a5f320318bd0b::t_0e0eff50583d43 35-40
+apps/desktop/src/shared/subscription-plan.ts
+  s_7a5f320318bd0b::t_17089fed12fa6c 50,54
+packages/core/src/parsers/kimi.ts
+  s_7a5f320318bd0b::t_bba405d4c983ed 4-6,16,28,71-72,103,105,119,131,197,199,282,290,346,474-486,489,500-501
+packages/core/src/paths.ts
+  s_7a5f320318bd0b::t_4b1d8fdad15ab5 2,153-183
+packages/core/src/sync/source-presence.ts
+  s_7a5f320318bd0b::t_b8a99ce9b10f34 38,134
+packages/core/test/kimi-desktop.test.ts
+  s_7a5f320318bd0b::t_692e36722ba717 1-154
+packages/core/test/p1-parsers.test.ts
+  s_7a5f320318bd0b::t_234f58ca875e02 560,562,590-591
+packages/dashboard/src/lib/about.ts
+  s_7a5f320318bd0b::t_f79abb7c375b6a 40
+packages/dashboard/src/lib/model-provider.test.ts
+  s_7a5f320318bd0b::t_2439a10abbe51c 60-69
+packages/dashboard/src/lib/model-provider.ts
+  s_7a5f320318bd0b::t_7e183bbb746da8 77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "74e11de5e2cee59fad140a3767f5f56c1799cb9d",
+  "prompts": {},
+  "sessions": {
+    "s_7a5f320318bd0b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a106ee-ee7b-7d61-a08c-343d65987675",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

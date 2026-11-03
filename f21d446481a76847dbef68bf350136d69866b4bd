@@ -1,0 +1,23 @@
+.changeset/refresh-linked-account-profile.md
+  s_3f44dcb0a44271::t_68071100d739cc 1-5
+packages/core/src/server/local-api.ts
+  s_3f44dcb0a44271::t_ce7917b545905f 100-126,279-310,552,613-618,636
+packages/core/test/local-api-config.test.ts
+  s_3f44dcb0a44271::t_8f09138f040d0b 17-19,35,47-206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f21d446481a76847dbef68bf350136d69866b4bd",
+  "prompts": {},
+  "sessions": {
+    "s_3f44dcb0a44271": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ff4b-9e19-7da1-a867-0b7530b317a7",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

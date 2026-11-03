@@ -1,0 +1,31 @@
+.changeset/calibrate-missing-events.md
+  s_81b72239606897::t_ce60c8609d13fc 7-9
+  s_81b72239606897::t_1022a7b8940d58 1-6
+packages/core/src/upload/calibrate.ts
+  s_81b72239606897::t_0b11a906619bd3 13,190-200,462,467-472,477-478,499-515,517,525-526,682-695,714-716,718-721,728-734,738,740,743-773,786-793,795,802
+packages/core/test/calibrate-pagination.test.ts
+  s_81b72239606897::t_1436f1d5fbd1df 1-213
+FAQ.md
+  s_81b72239606897::t_1022a7b8940d58 13,18-19
+  s_81b72239606897::t_ce60c8609d13fc 15-17
+packages/core/test/calibrate.test.ts
+  s_81b72239606897::t_c54dc00723aec4 544-592
+  s_81b72239606897::t_ab0d60f9f11f9f 7,9,20,26-34,161-237,240-255,261-276,280-281,294-474
+  s_81b72239606897::t_5523b5d29e4a07 238-239,475-543
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8695f039b8d7fd06787ccdf2b3506ad368f9082f",
+  "prompts": {},
+  "sessions": {
+    "s_81b72239606897": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ff4a-98f6-72b1-8f54-b843b02f224e",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

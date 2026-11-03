@@ -1,0 +1,129 @@
+packages/core/src/parsers/copilot-vscode.ts
+  s_a63545a9c34d51::t_a44ae804964792 11-12,88-113,139-141,149,154-155,157,174-182,192,202-206,230-232,235-236,239-245,251,256-263,265-279,315,324-329
+  s_a63545a9c34d51::t_4e92d865d77d08 30-38
+  s_a63545a9c34d51::t_5cbc6e8ecac7f8 282-283,288-297,299-309
+  s_a63545a9c34d51::t_9e968d87cdf711 207-208,217-223,225-229,234,237,246-248,250,252-255,281
+  s_a63545a9c34d51::t_809db470afdd2e 312-314,316-321
+  s_a63545a9c34d51::t_6fc5ec30f4f4ed 1-10,13-29,39-87,138,142-148,150-153,156,158-173,183-191,193-201,238,264,287,298,310-311,322-323,330-339
+  s_a63545a9c34d51::t_0f5a0675b2c16d 114-137,209-216,224,233,249,280,284-286
+packages/core/test/copilot-vscode-sync.test.ts
+  s_a63545a9c34d51::t_7da3c91af7a369 19,261
+  s_a63545a9c34d51::t_6416d6f9b8b2a9 338-363
+  s_a63545a9c34d51::t_a8a8897d41d2d6 2,10,28,51,135-189
+  s_a63545a9c34d51::t_dcc7e3a788140f 106-109
+  s_a63545a9c34d51::t_5712a85d1561c7 364-482
+  s_a63545a9c34d51::t_454d608711c610 8,20,211-215
+  s_a63545a9c34d51::t_fd426070fb622a 1,3,5-7,9,11-18,21-27,29-50,52-105,110-134,190-210,216-260,262-306,336-337
+  s_a63545a9c34d51::t_738249bbf52b8d 4,307-335
+.changeset/copilot-vscode-token-usage.md
+  s_a63545a9c34d51::t_5cbc6e8ecac7f8 7
+  s_a63545a9c34d51::t_3cf5f2a4a7a5a4 1-6
+.changeset/copilot-subscription-quota.md
+  s_726193307e7c2a::t_591f27870cf9ee 1-5
+FAQ.md
+  s_a63545a9c34d51::t_3cf5f2a4a7a5a4 68-69,71-73,79-100,102-114,123-129
+  s_a63545a9c34d51::t_5cbc6e8ecac7f8 70,74-78,115-122
+  s_a63545a9c34d51::t_4e92d865d77d08 101
+apps/desktop/src/shared/copilot-subscription.ts
+  s_726193307e7c2a::t_8ec11983346816 1-142
+apps/desktop/README.md
+  s_726193307e7c2a::t_591f27870cf9ee 77-86
+apps/desktop/src/shared/copilot-subscription.test.ts
+  s_726193307e7c2a::t_8ec11983346816 1-142
+packages/dashboard/src/lib/about.ts
+  s_a63545a9c34d51::t_3cf5f2a4a7a5a4 28
+apps/desktop/src/renderer/lib/about.ts
+  s_a63545a9c34d51::t_3cf5f2a4a7a5a4 28
+apps/desktop/src/renderer/components/SubscriptionUsageGrid.tsx
+  s_726193307e7c2a::t_8c25fcf7c3bc61 4,31
+apps/desktop/src/renderer/global.d.ts
+  s_726193307e7c2a::t_8c25fcf7c3bc61 39-41
+apps/desktop/src/renderer/components/CopilotSubscriptionCard.tsx
+  s_726193307e7c2a::t_8c25fcf7c3bc61 1-46,48,50-64
+  s_726193307e7c2a::t_784ec40710f6c5 47,49
+apps/desktop/src/main/index.ts
+  s_726193307e7c2a::t_8c25fcf7c3bc61 38,104,525,687-688
+packages/core/test/copilot-vscode.test.ts
+  s_a63545a9c34d51::t_5a3840a75a23e0 2,239,249-260,366
+  s_a63545a9c34d51::t_ac7ff91ecdf164 103-109,112-152,159-167,182-199
+  s_a63545a9c34d51::t_e8a8c2e09d2988 110-111
+  s_a63545a9c34d51::t_f28bf2d4dc176f 153-158,168-181
+  s_a63545a9c34d51::t_be67a4c0dd8a82 372,383-400
+  s_a63545a9c34d51::t_127e8f503e38ce 1,3-102,200-238,240-248,261-365,367-371,373-382,401-402
+apps/desktop/src/shared/subscription-channels.ts
+  s_726193307e7c2a::t_8c25fcf7c3bc61 14
+packages/core/src/index.ts
+  s_a63545a9c34d51::t_6fc5ec30f4f4ed 27
+apps/desktop/src/renderer/components/SubscriptionBrandIcon.tsx
+  s_726193307e7c2a::t_8c25fcf7c3bc61 7,17,30
+packages/core/src/sync/index.ts
+  s_a63545a9c34d51::t_57ba6726db542b 181-185,244-252
+  s_a63545a9c34d51::t_4efa85bf897819 17,217,300,341,353-354,358-361,363-371,373-385
+  s_a63545a9c34d51::t_dc1c432c61f33b 7,342-352,355-357,362,372
+packages/core/src/sync/copilot-vscode-sources.ts
+  s_a63545a9c34d51::t_029806fbccd021 1-79
+packages/core/src/sync/source-presence.ts
+  s_a63545a9c34d51::t_dc1c432c61f33b 13,109-110
+  s_a63545a9c34d51::t_4efa85bf897819 12
+apps/desktop/src/renderer/components/SubscriptionUsageCard.tsx
+  s_726193307e7c2a::t_784ec40710f6c5 113
+apps/desktop/src/main/copilot-subscription.ts
+  s_726193307e7c2a::t_8a5f503204d4da 107-109
+  s_726193307e7c2a::t_84fde42d62d5a2 149-150
+  s_726193307e7c2a::t_f531481a0cf334 28-29
+  s_726193307e7c2a::t_efec845c579d55 1-27,30-106,110-148,151-168
+packages/core/src/parsers/copilot-vscode-sessions.ts
+  s_a63545a9c34d51::t_b1d5739d266d21 2-10,12-28,30-125,127-162,167-169,171-185,190-197,199-202,204-234,236-249
+  s_a63545a9c34d51::t_c76dcdc6649185 164-165,186,189,235
+  s_a63545a9c34d51::t_83719ea96ea646 1,11,29,126,163,166,170,198,203
+  s_a63545a9c34d51::t_5aba7120f26684 187-188
+apps/desktop/src/preload/index.ts
+  s_726193307e7c2a::t_8c25fcf7c3bc61 39,83,147-148
+  s_a63545a9c34d51::t_7f855b64e46e2b 149
+packages/core/src/server/state.ts
+  s_a63545a9c34d51::t_4efa85bf897819 176
+packages/core/src/types.ts
+  s_a63545a9c34d51::t_a44ae804964792 212-215
+  s_a63545a9c34d51::t_6fc5ec30f4f4ed 209-211,216
+apps/desktop/src/main/copilot-subscription-ipc.ts
+  s_726193307e7c2a::t_8c25fcf7c3bc61 1-10
+packages/core/README.md
+  s_a63545a9c34d51::t_5cbc6e8ecac7f8 28
+  s_a63545a9c34d51::t_775b96d91534e3 29-30
+  s_a63545a9c34d51::t_3cf5f2a4a7a5a4 19,31
+  s_726193307e7c2a::t_878b303a27b729 32
+apps/desktop/src/main/copilot-subscription.test.ts
+  s_726193307e7c2a::t_8a5f503204d4da 82-87
+  s_726193307e7c2a::t_15d9ea32b300a8 1-81,88-137
+  s_726193307e7c2a::t_84fde42d62d5a2 138-155
+packages/core/test/copilot-vscode-sessions.test.ts
+  s_a63545a9c34d51::t_3ea84649ec1b40 1-115,120-234
+  s_a63545a9c34d51::t_131ead98876d50 118-119
+  s_a63545a9c34d51::t_a01813c35696e2 116-117
+apps/desktop/src/shared/subscription-channels.test.ts
+  s_726193307e7c2a::t_8c25fcf7c3bc61 13-14,19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9ca171bcb63a08e2dab94b5974fd5b313cb36d8a",
+  "prompts": {},
+  "sessions": {
+    "s_726193307e7c2a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ec49-26bf-7310-9aab-15b29c17ca87",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    },
+    "s_a63545a9c34d51": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ec10-4c87-7860-99d2-ae273e0916a2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

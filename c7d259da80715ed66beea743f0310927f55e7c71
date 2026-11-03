@@ -1,0 +1,57 @@
+.changeset/usage-consistency-quality.md
+  s_52b0b6337827f0::t_f7b67bb9f5cb88 1-8
+apps/desktop/src/renderer/components/DashboardOverviewCard.tsx
+  s_b8fe478b6da5a2::t_c7f818ab178bc1 62,70-72,100,138-140,200,204,207,209-228,319
+apps/desktop/src/renderer/components/FilterChromeActions.tsx
+  s_b8fe478b6da5a2::t_27a7548b9d1fd3 1,111
+apps/desktop/src/renderer/components/SettingsPanel.tsx
+  s_b8fe478b6da5a2::t_cab4511411a0c8 1,1415
+apps/desktop/src/renderer/components/UploadStatusNotice.tsx
+  s_b8fe478b6da5a2::t_948df70d38ee7b 1-68
+apps/desktop/src/renderer/lib/api.ts
+  s_b8fe478b6da5a2::t_49586401b47994 1-2,5-6,116-117,126,128,139-142,149-150,164,175,194-195,204-205,214-215,238,544
+apps/desktop/src/renderer/lib/sync-feedback.ts
+  s_b8fe478b6da5a2::t_64c8efb517890d 1-27
+docs/usage-consistency.md
+  s_52b0b6337827f0::t_c325cf9f0755b3 1-32
+packages/cli/src/index.ts
+  s_52b0b6337827f0::t_fb62bb64e43cc0 38,471,479-485,492
+packages/dashboard/src/components/DashboardOverviewCard.tsx
+  s_b8fe478b6da5a2::t_983c7331821670 58,66-68,96,134-136,196,200,203,205-224,315
+packages/dashboard/src/components/FilterChromeActions.tsx
+  s_b8fe478b6da5a2::t_6cbfb2d0245d76 1,141
+packages/dashboard/src/components/SettingsPanel.tsx
+  s_b8fe478b6da5a2::t_93c58e75cd99eb 1,462
+packages/dashboard/src/components/UploadStatusNotice.tsx
+  s_b8fe478b6da5a2::t_25c38b6562ab98 1-68
+packages/dashboard/src/lib/api.ts
+  s_b8fe478b6da5a2::t_aa76c80e1574f9 1,10,35-36,82-83,92,94,105-108,115-116,130,141,160-161,170-171,180-181,219,705
+packages/dashboard/src/lib/sync-feedback.test.ts
+  s_b8fe478b6da5a2::t_aab74f4a2ac3cd 1-24
+packages/dashboard/src/lib/sync-feedback.ts
+  s_b8fe478b6da5a2::t_e1ce4a5d172e45 1-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c7d259da80715ed66beea743f0310927f55e7c71",
+  "prompts": {},
+  "sessions": {
+    "s_52b0b6337827f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e349-1991-7660-917b-ed0a5581ec7f",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <58761705+Altria1979@users.noreply.github.com>"
+    },
+    "s_b8fe478b6da5a2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e2f0-93b7-7bb2-8ae0-fc421d4c3009",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

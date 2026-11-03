@@ -1,0 +1,26 @@
+apps/desktop/tsconfig.test.json
+  s_aedd94338409bc::t_8aed648635ae29 15
+apps/desktop/src/main/grok-subscription.test.ts
+  s_aedd94338409bc::t_dd9f05f0307950 2-3,16,18-19,31-42
+apps/desktop/package.json
+  s_aedd94338409bc::t_425858e0928e9c 23
+apps/desktop/README.md
+  s_aedd94338409bc::t_425858e0928e9c 38
+  s_aedd94338409bc::t_ee3d152a6e81a4 29-37,39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4949badb2b330e65bf94f83c0231e48d5db58233",
+  "prompts": {},
+  "sessions": {
+    "s_aedd94338409bc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a29c-49fe-71c3-85dc-99b4e49c2b0e",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

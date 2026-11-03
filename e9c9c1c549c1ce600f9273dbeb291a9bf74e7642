@@ -1,0 +1,119 @@
+packages/core/src/index.ts
+  s_8722383320520c::t_f13849882972ae 24
+packages/core/src/upload/events.ts
+  s_8722383320520c::t_b257bf1d05c85f 126
+packages/core/src/sync/index.ts
+  s_8722383320520c::t_b257bf1d05c85f 126,367
+  s_8722383320520c::t_df48800d3fb4b4 58-60,1143,1150
+  s_8722383320520c::t_1bee8dab2198dc 382
+  s_8722383320520c::t_8aee8607804f25 12,82-83,95-97,317-366,368-381,383,385-397
+packages/core/src/pricing/index.ts
+  s_8722383320520c::t_e8e3e692f63bb2 418
+  s_8722383320520c::t_b257bf1d05c85f 421
+apps/desktop/src/main/trae-subscription.ts
+  s_8722383320520c::t_4a8d0bcc4439e1 119,124
+  s_8722383320520c::t_aaf4b1cd1c8a02 2,10,12-15,28,47-48,87,120-122
+  s_8722383320520c::t_ea6c22e8dacbe8 52,62,71,78,83,88
+  s_8722383320520c::t_96ed3e264979c4 20,22-27,29-34,36-39,41,45-46,49-51,53-56,58,60-61,63-70,72-75,77,79-82,84-86,89-101,103-105,110,116-117
+apps/desktop/src/shared/subscription-plan.test.ts
+  s_8722383320520c::t_a69543bd3f43e0 34-35
+apps/desktop/src/renderer/components/TraeSubscriptionGroup.tsx
+  s_8722383320520c::t_c63c839df0d3a3 3-6,9,20,27
+docs/trae-international.md
+  s_8722383320520c::t_a69543bd3f43e0 30-31
+  s_8722383320520c::t_b042e202976846 36-37
+  s_8722383320520c::t_5dfeed4b2485d1 1-29,32-35,38-50
+apps/desktop/src/renderer/components/SubscriptionUsageCard.tsx
+  s_8722383320520c::t_a69543bd3f43e0 24-25,43
+apps/desktop/src/shared/subscription-channels.test.ts
+  s_8722383320520c::t_c63c839df0d3a3 14-15,21,25
+packages/core/src/parsers/trae-api.ts
+  s_8722383320520c::t_2a56d85d0a1a84 1-6,8-38,40-41,49-64,67,72-81,83-102,105-108,113-114,117,119,124-133,135,139-143,154-162
+  s_8722383320520c::t_e8e3e692f63bb2 42-48,65-66,68-71,82,103-104,109-112,115-116,123,134,136-138,145-147,149,151-153
+  s_8722383320520c::t_b257bf1d05c85f 150
+  s_8722383320520c::t_c58880758110ff 39,118,120-122
+  s_8722383320520c::t_1bee8dab2198dc 7,144,148
+packages/core/src/aggregate.ts
+  s_8722383320520c::t_b257bf1d05c85f 132-134
+packages/core/test/trae-api-usage.test.ts
+  s_8722383320520c::t_82028a4ea9807f 1-11,13,15-17,19-148,162,164-168,170-187,189-190,192-193,196-202,205-206,209-266,293-296,298-309,316-332,334-336,345-349
+  s_8722383320520c::t_111b26d80fcb17 12,14,18,267-292
+  s_8722383320520c::t_c58880758110ff 163
+  s_8722383320520c::t_afe8827b2f1d4e 149-161
+  s_8722383320520c::t_99e45cb3f2691b 169,188,191,194-195,203-204,207-208,297,310-315,333,337-344
+packages/core/test/platform-fixtures.ts
+  s_8722383320520c::t_a678e81b91c510 93
+packages/core/src/server/sync-on-signal.ts
+  s_8722383320520c::t_df48800d3fb4b4 93-95,102-124,215,222
+apps/desktop/README.md
+  s_8722383320520c::t_5dfeed4b2485d1 77-80
+packages/core/src/trae/api.ts
+  s_8722383320520c::t_f13849882972ae 1-139
+apps/desktop/src/main/trae-subscription.test.ts
+  s_8722383320520c::t_e72e6516511730 5-7,10-19,21-53,55-78,80-83,85-96,98-110,113-163
+  s_8722383320520c::t_d88edd42077bb6 20
+  s_8722383320520c::t_aaf4b1cd1c8a02 3,54,79
+  s_8722383320520c::t_668dd6d9b060c5 164-182
+packages/core/test/sync-on-signal.test.ts
+  s_8722383320520c::t_111b26d80fcb17 190-200,203-216,220-232,237-241,243-283
+  s_8722383320520c::t_e0b3fc83a19ecd 201-202,217-219,233-236,242
+apps/desktop/src/shared/trae-subscription.test.ts
+  s_8722383320520c::t_d88edd42077bb6 7
+  s_8722383320520c::t_1af11b1c944389 5-6,8-25,28-38,40,46-61,65-74,76-91,127
+  s_8722383320520c::t_19014ad6f02370 26,41-42,62,92,124
+  s_8722383320520c::t_a4decd15b101b7 101-123,125-126
+packages/core/src/types.ts
+  s_8722383320520c::t_e8e3e692f63bb2 35,777
+  s_8722383320520c::t_4cc2d1a9ef63bb 24-25,169-174,768
+  s_8722383320520c::t_b257bf1d05c85f 26-27,767,769
+apps/desktop/src/shared/subscription-channels.ts
+  s_8722383320520c::t_c63c839df0d3a3 9,23
+apps/desktop/src/renderer/components/TraeSubscriptionCard.tsx
+  s_8722383320520c::t_c63c839df0d3a3 20-23,68,76-78
+  s_8722383320520c::t_a69543bd3f43e0 71
+.changeset/tidy-trae-usage.md
+  s_8722383320520c::t_b042e202976846 7-8
+  s_8722383320520c::t_5dfeed4b2485d1 1-6
+  s_8722383320520c::t_07321b5eadc547 9-10
+packages/core/src/queue/keys.ts
+  s_8722383320520c::t_4cc2d1a9ef63bb 7,10
+  s_8722383320520c::t_1bee8dab2198dc 11
+packages/core/test/trae-api.test.ts
+  s_8722383320520c::t_e113103c7ced30 1-102
+apps/desktop/src/shared/subscription-plan.ts
+  s_8722383320520c::t_a69543bd3f43e0 50,53-54
+packages/core/src/parsers/trae.ts
+  s_8722383320520c::t_6d90c1f86e148f 19-20,180-183,189-190,197-220,222-263,273-276,284,335,373
+  s_8722383320520c::t_b257bf1d05c85f 221
+packages/core/src/sync/source-presence.ts
+  s_8722383320520c::t_a678e81b91c510 31,103-106
+packages/core/src/queue/align-unknown.ts
+  s_8722383320520c::t_4cc2d1a9ef63bb 11,14-15
+apps/desktop/src/shared/trae-subscription.ts
+  s_8722383320520c::t_4a8d0bcc4439e1 19-21,86-87,115-129,131-132
+  s_8722383320520c::t_d88edd42077bb6 135-137
+  s_8722383320520c::t_a69543bd3f43e0 84
+  s_8722383320520c::t_1af11b1c944389 3,38,43-44,46,49-56,59-71,73,75-77,79-81,85,88,92-93,95-100,102-107,109-114,134,138-139
+README.md
+  s_8722383320520c::t_5dfeed4b2485d1 57-58
+apps/desktop/src/renderer/components/SubscriptionUsageGrid.tsx
+  s_8722383320520c::t_c63c839df0d3a3 12,41
+packages/core/test/qoder-trae-collectors.test.ts
+  s_8722383320520c::t_f26fc49c6864b3 26,297,324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9c9c1c549c1ce600f9273dbeb291a9bf74e7642",
+  "prompts": {},
+  "sessions": {
+    "s_8722383320520c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a121ba-4596-77d3-b416-31971b5f3aec",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

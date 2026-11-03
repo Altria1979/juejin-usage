@@ -1,0 +1,28 @@
+apps/desktop/src/main/codex-subscription.ts
+  s_efde0a283c90cf::t_a1b7c2a861a8b5 51,53,55,60,78
+apps/desktop/src/main/codex-subscription.test.ts
+  s_efde0a283c90cf::t_9e103abd949a8d 57,59-60,116-133
+apps/desktop/README.md
+  s_efde0a283c90cf::t_ade7adeeff31bc 180
+apps/desktop/src/main/codex-subscription-ipc.ts
+  s_efde0a283c90cf::t_a1b7c2a861a8b5 1-2,6-7
+  s_efde0a283c90cf::t_3d7d04cc63e78e 8
+.changeset/fix-codex-subscription-system-proxy.md
+  s_efde0a283c90cf::t_ade7adeeff31bc 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28a1505240ac81780ce3809a864b5781d2f96e89",
+  "prompts": {},
+  "sessions": {
+    "s_efde0a283c90cf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13ece-7b54-75b3-a082-ccedcb264614",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

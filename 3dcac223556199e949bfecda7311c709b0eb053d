@@ -1,0 +1,23 @@
+packages/core/test/codex-ledger-reconciliation.test.ts
+  s_fcba688baad1d9::t_1b796d69acf268 8,243-266,277-280
+packages/core/src/parsers/codex-ledger-state.ts
+  s_fcba688baad1d9::t_52fa9f44cf1ceb 94-97
+.changeset/codex-windows-inode.md
+  s_fcba688baad1d9::t_52fa9f44cf1ceb 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3dcac223556199e949bfecda7311c709b0eb053d",
+  "prompts": {},
+  "sessions": {
+    "s_fcba688baad1d9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fbb1-dedf-7033-8a2c-d74ab3808193",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

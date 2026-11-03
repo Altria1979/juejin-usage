@@ -1,0 +1,23 @@
+packages/dashboard/src/lib/usage-dataset-fingerprint.test.ts
+  s_b8fe478b6da5a2::t_f2a0e664eb18d9 1-73
+apps/desktop/src/renderer/lib/usage-dataset-fingerprint.ts
+  s_b8fe478b6da5a2::t_c58f3e3382a4c3 4-7,13,15-20,22
+packages/dashboard/src/lib/usage-dataset-fingerprint.ts
+  s_b8fe478b6da5a2::t_5c54184cf888bb 4-7,13,15-20,22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6ac48cbff843cb7e3e25ec717902f885dcd330cc",
+  "prompts": {},
+  "sessions": {
+    "s_b8fe478b6da5a2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e2f0-93b7-7bb2-8ae0-fc421d4c3009",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "yinpeng <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}

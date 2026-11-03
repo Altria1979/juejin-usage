@@ -1,0 +1,20 @@
+apps/desktop/src/main/kimi-subscription.test.ts
+  s_7a5f320318bd0b::t_5b7116ef361759 91,125-154
+  s_7a5f320318bd0b::t_b8e8ebfd8e84cb 155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "990dcec78f37a7a7212db73f8123b80dca20c873",
+  "prompts": {},
+  "sessions": {
+    "s_7a5f320318bd0b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a106ee-ee7b-7d61-a08c-343d65987675",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Altria1979 <58761705+Altria1979@users.noreply.github.com>"
+    }
+  }
+}
